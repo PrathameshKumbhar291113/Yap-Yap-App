@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "125027323764",
+    "project_id": "yap-yap-528ac",
+    "storage_bucket": "yap-yap-528ac.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:125027323764:android:316ab431e0035a478e2621",
+        "android_client_info": {
+          "package_name": "com.yapyap"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAjWTFzR0-A38BvvaeVXffPXuJfv7qkQP0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
