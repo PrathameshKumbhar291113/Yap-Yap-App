@@ -2,6 +2,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 import com.codingfeline.buildkonfig.compiler.FieldSpec.Type.BOOLEAN
 import com.codingfeline.buildkonfig.compiler.FieldSpec.Type.STRING
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
@@ -21,29 +22,31 @@ if (findProperty("buildkonfig.flavor") == null) {
     extensions.extraProperties["buildkonfig.flavor"] = flavor
 }
 
+val yapProductionBaseUrl = "https://yapyap-backend.onrender.com"
+
+val yapBaseUrlOverride = run {
+    val localProperties = Properties()
+    val localFile = rootProject.file("local.properties")
+    if (localFile.exists()) {
+        localFile.inputStream().use { localProperties.load(it) }
+    }
+    localProperties.getProperty("yapyap.baseUrl")
+        ?: findProperty("yapyap.baseUrl") as String?
+        ?: yapProductionBaseUrl
+}
+
 buildkonfig {
     packageName = "com.yapyap.core.config"
     objectName = "AppBuildConfig"
 
     defaultConfigs {
-        buildConfigField(STRING, "BASE_URL", "https://api.yapyap.app")
+        buildConfigField(STRING, "BASE_URL", yapBaseUrlOverride)
         buildConfigField(BOOLEAN, "IS_DEBUG", "false")
     }
 
     defaultConfigs("debug") {
         buildConfigField(BOOLEAN, "IS_DEBUG", "true")
-    }
-
-    targetConfigs("debug") {
-        create("android") {
-            buildConfigField(STRING, "BASE_URL", "http://10.0.2.2:8080")
-        }
-        create("iosArm64") {
-            buildConfigField(STRING, "BASE_URL", "http://localhost:8080")
-        }
-        create("iosSimulatorArm64") {
-            buildConfigField(STRING, "BASE_URL", "http://localhost:8080")
-        }
+        buildConfigField(STRING, "BASE_URL", yapBaseUrlOverride)
     }
 }
 

@@ -52,13 +52,17 @@ The seed script is idempotent (`ON CONFLICT` upserts) — safe to re-run.
 
 ## 3. Run the app (debug)
 
-Build and run a **debug** build so BuildKonfig points at the local API:
+Build and run a **debug** build. By default, debug and release both use the hosted API:
 
-| Platform | Debug `BASE_URL` | Notes |
-|----------|------------------|-------|
-| **Android emulator** | `http://10.0.2.2:8080` | `10.0.2.2` is the host machine from the emulator |
-| **iOS Simulator** | `http://localhost:8080` | Cleartext HTTP allowed via `Info-Debug.plist` |
-| **Physical device** | Use your machine's LAN IP, e.g. `http://192.168.1.x:8080` | Requires updating BuildKonfig or a custom debug flavor |
+**`https://yapyap-backend.onrender.com`** ([health check](https://yapyap-backend.onrender.com))
+
+| Platform | Default `BASE_URL` | Local override (`local.properties`) |
+|----------|-------------------|-------------------------------------|
+| **Android emulator** | Render (HTTPS) | `yapyap.baseUrl=http://10.0.2.2:8080` |
+| **iOS Simulator** | Render (HTTPS) | `yapyap.baseUrl=http://localhost:8080` |
+| **Physical device** | Render (HTTPS) | `yapyap.baseUrl=http://192.168.1.x:8080` (your LAN IP) |
+
+Override order: `local.properties` → `gradle.properties` → Render default.
 
 ```bash
 # Android
