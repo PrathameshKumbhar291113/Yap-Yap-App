@@ -17,6 +17,7 @@ import com.yapyap.core.push.model.PushNavigationTarget
 import com.yapyap.core.realtime.IncomingMessageNotifier
 import com.yapyap.core.realtime.ChatRealtimeClient
 import com.yapyap.core.util.UserMessages
+import com.yapyap.core.session.BootstrapState
 import com.yapyap.core.session.SessionManager
 import com.yapyap.feature.auth.presentation.LoginScreen
 import com.yapyap.feature.auth.presentation.RegisterScreen
@@ -44,6 +45,9 @@ fun YapYapNavHost(
 
     LaunchedEffect(sessionManager, sessionExpiredMessage) {
         sessionManager.sessionExpired.collect {
+            if (sessionManager.bootstrapState.value != BootstrapState.Authenticated) {
+                return@collect
+            }
             snackbarHostState.showSnackbar(sessionExpiredMessage)
             navController.navigate(Route.AUTH) {
                 popUpTo(Route.SPLASH) { inclusive = true }

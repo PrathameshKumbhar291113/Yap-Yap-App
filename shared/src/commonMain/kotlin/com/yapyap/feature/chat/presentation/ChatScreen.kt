@@ -1,5 +1,10 @@
 package com.yapyap.feature.chat.presentation
 
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,6 +17,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -32,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -39,6 +46,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.yapyap.core.di.koinViewModel
@@ -46,11 +54,13 @@ import com.yapyap.core.theme.YapReadReceipt
 import com.yapyap.core.theme.YapSpacing
 import com.yapyap.core.ui.FullScreenError
 import com.yapyap.core.ui.YapInsets
+import com.yapyap.core.ui.chatMessageInputInsets
 import com.yapyap.core.ui.YapScreenHorizontalPadding
 import com.yapyap.core.ui.haptic.rememberSendHapticEffect
 import com.yapyap.core.util.todayDateKey
 import com.yapyap.core.util.yesterdayDateKey
-import org.jetbrains.compose.resources.stringResource
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import yapyap.shared.generated.resources.Res
 import yapyap.shared.generated.resources.cd_back
 import yapyap.shared.generated.resources.cd_send
@@ -66,6 +76,14 @@ import yapyap.shared.generated.resources.typing_multiple
 import yapyap.shared.generated.resources.typing_single
 import yapyap.shared.generated.resources.unknown_user
 import yapyap.shared.generated.resources.yesterday
+import org.jetbrains.compose.resources.stringResource
+
+private enum class ChatScrollMode {
+    PendingInitialPosition,
+    AnchoredAtUnread,
+    PinnedToBottom,
+    FreeScroll,
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -77,9 +95,10 @@ fun ChatScreen(
     if (parsedConversationId == null) {
         Scaffold(
             topBar = {
-                TopAppBar(
-                    title = { Text(stringResource(Res.string.chats)) },
-                    navigationIcon = {
+            TopAppBar(
+                title = { Text(stringResource(Res.string.chats)) },
+                windowInsets = YapInsets.topAppBar,
+                navigationIcon = {
                         IconButton(onClick = onBack) {
                             YapIcon(
                                 resource = YapDrawable.ArrowBack,
@@ -121,9 +140,14 @@ private fun ChatScreenContent(
     val input by viewModel.messageInput.collectAsState()
     val listState = rememberLazyListState()
     val hapticSend = rememberSendHapticEffect()
+    var scrollMode by remember { mutableStateOf(ChatScrollMode.PendingInitialPosition) }
+    var initialScrollDone by remember { mutableStateOf(false) }
+    var previousUnreadCount by remember { mutableIntStateOf(-1) }
+    var anchorUnreadCount by remember { mutableIntStateOf(0) }
     var lastAutoScrollKey by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(listState) {
+    LaunchedEffect(listState, initialScrollDone) {
+        if (!initialScrollDone) return@LaunchedEffect
         snapshotFlow { listState.firstVisibleItemIndex }
             .collect { index ->
                 if (index <= 1) {
@@ -138,6 +162,7 @@ private fun ChatScreenContent(
         topBar = {
             TopAppBar(
                 title = { Text(titleLabel) },
+                windowInsets = YapInsets.topAppBar,
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         YapIcon(
@@ -155,6 +180,7 @@ private fun ChatScreenContent(
                 onValueChange = viewModel::onInputChange,
                 onSend = {
                     hapticSend()
+                    scrollMode = ChatScrollMode.PinnedToBottom
                     viewModel.sendMessage()
                 },
                 sendError = content?.sendError?.ifBlank { stringResource(Res.string.failed_send_message) },
@@ -197,16 +223,129 @@ private fun ChatScreenContent(
                             yesterdayLabel = yesterdayLabel,
                         )
                     }
-
+                    val headerItemCount = when {
+                        state.isLoadingOlder || state.hasMore -> 1
+                        else -> 0
+                    }
+                    val trailingItemCount = if (state.typingUserCount > 0) 1 else 0
                     val latestMessageKey = state.messages.lastOrNull()?.stableKey
-                    LaunchedEffect(latestMessageKey) {
-                        if (latestMessageKey == null || latestMessageKey == lastAutoScrollKey) return@LaunchedEffect
-                        val targetIndex = listItems.indexOfLast {
-                            it is ChatListItem.MessageItem && it.message.stableKey == latestMessageKey
+
+                    LaunchedEffect(state.unreadCount) {
+                        if (anchorUnreadCount == 0 && state.unreadCount > 0) {
+                            anchorUnreadCount = state.unreadCount
                         }
-                        if (targetIndex >= 0) {
-                            listState.animateScrollToItem(targetIndex)
-                            lastAutoScrollKey = latestMessageKey
+                    }
+
+                    fun listIndexToLazyIndex(listItemIndex: Int): Int =
+                        (headerItemCount + listItemIndex).coerceAtLeast(0)
+
+                    fun lazyBottomIndex(): Int =
+                        (headerItemCount + listItems.size + trailingItemCount - 1).coerceAtLeast(0)
+
+                    LaunchedEffect(
+                        state.messages,
+                        anchorUnreadCount,
+                        state.hasMore,
+                        state.isLoadingOlder,
+                    ) {
+                        if (initialScrollDone || state.messages.isEmpty()) return@LaunchedEffect
+                        if (needsOlderMessagesForUnread(state.messages, anchorUnreadCount, state.hasMore)) {
+                            if (!state.isLoadingOlder) {
+                                viewModel.loadOlderMessages()
+                            }
+                        }
+                    }
+
+                    LaunchedEffect(
+                        state.messages,
+                        anchorUnreadCount,
+                        listItems.size,
+                        headerItemCount,
+                        trailingItemCount,
+                        state.hasMore,
+                        state.isLoadingOlder,
+                    ) {
+                        if (initialScrollDone || state.messages.isEmpty() || listItems.isEmpty()) {
+                            return@LaunchedEffect
+                        }
+                        if (needsOlderMessagesForUnread(state.messages, anchorUnreadCount, state.hasMore)) {
+                            return@LaunchedEffect
+                        }
+                        if (state.isLoadingOlder) return@LaunchedEffect
+
+                        val unreadForAnchor = anchorUnreadCount.takeIf { it > 0 } ?: state.unreadCount
+                        val listItemIndex = if (unreadForAnchor > 0) {
+                            findFirstUnreadListIndex(listItems, state.messages, unreadForAnchor)
+                        } else {
+                            listItems.lastIndex
+                        }
+                        val targetLazyIndex = listIndexToLazyIndex(listItemIndex)
+                        val requiredItems = headerItemCount + listItems.size + trailingItemCount
+
+                        snapshotFlow { listState.layoutInfo.totalItemsCount }
+                            .first { it >= requiredItems }
+
+                        listState.scrollToItem(targetLazyIndex)
+                        initialScrollDone = true
+                        scrollMode = if (unreadForAnchor > 0) {
+                            ChatScrollMode.AnchoredAtUnread
+                        } else {
+                            ChatScrollMode.PinnedToBottom
+                        }
+                        lastAutoScrollKey = latestMessageKey
+                    }
+
+                    LaunchedEffect(state.unreadCount) {
+                        val previous = previousUnreadCount
+                        previousUnreadCount = state.unreadCount
+                        if (!initialScrollDone || previous <= 0 || state.unreadCount != 0) return@LaunchedEffect
+                        scrollMode = ChatScrollMode.PinnedToBottom
+                        listState.animateScrollToItem(lazyBottomIndex())
+                        lastAutoScrollKey = latestMessageKey
+                    }
+
+                    LaunchedEffect(listState, headerItemCount, listItems.size, trailingItemCount) {
+                        snapshotFlow {
+                            val layoutInfo = listState.layoutInfo
+                            val totalItems = layoutInfo.totalItemsCount
+                            if (totalItems == 0) {
+                                false
+                            } else {
+                                val lastVisible = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                                lastVisible >= totalItems - 2
+                            }
+                        }
+                            .distinctUntilChanged()
+                            .collect { atBottom ->
+                                if (!initialScrollDone) return@collect
+                                if (atBottom) {
+                                    if (scrollMode != ChatScrollMode.PendingInitialPosition) {
+                                        scrollMode = ChatScrollMode.PinnedToBottom
+                                        viewModel.onReachedBottom()
+                                    }
+                                } else if (scrollMode == ChatScrollMode.PinnedToBottom) {
+                                    scrollMode = ChatScrollMode.FreeScroll
+                                }
+                            }
+                    }
+
+                    LaunchedEffect(latestMessageKey, scrollMode, listItems.size, trailingItemCount) {
+                        if (!initialScrollDone || latestMessageKey == null) return@LaunchedEffect
+                        if (scrollMode != ChatScrollMode.PinnedToBottom) return@LaunchedEffect
+                        if (latestMessageKey == lastAutoScrollKey) return@LaunchedEffect
+                        val listItemIndex = findLatestMessageListIndex(listItems, latestMessageKey)
+                        listState.animateScrollToItem(listIndexToLazyIndex(listItemIndex))
+                        lastAutoScrollKey = latestMessageKey
+                    }
+
+                    LaunchedEffect(state.typingUserCount, scrollMode, trailingItemCount, listItems.size) {
+                        if (!initialScrollDone || state.typingUserCount <= 0) return@LaunchedEffect
+                        val layoutInfo = listState.layoutInfo
+                        val totalItems = layoutInfo.totalItemsCount
+                        val nearBottom = totalItems > 0 &&
+                            (layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0) >= totalItems - 3
+                        if (scrollMode == ChatScrollMode.PinnedToBottom || nearBottom) {
+                            listState.animateScrollToItem(lazyBottomIndex())
                         }
                     }
 
@@ -215,8 +354,10 @@ private fun ChatScreenContent(
                         modifier = Modifier.fillMaxSize(),
                         verticalArrangement = Arrangement.spacedBy(YapSpacing.xs),
                         contentPadding = PaddingValues(
-                            horizontal = YapScreenHorizontalPadding,
-                            vertical = YapSpacing.xs,
+                            start = YapScreenHorizontalPadding,
+                            end = YapScreenHorizontalPadding,
+                            top = YapSpacing.xs,
+                            bottom = if (state.typingUserCount > 0) YapSpacing.md else YapSpacing.xs,
                         ),
                     ) {
                         if (state.isLoadingOlder) {
@@ -243,31 +384,98 @@ private fun ChatScreenContent(
                             }
                         }
 
-                        if (state.typingUserCount > 0) {
-                            item(key = "typing_indicator") {
-                                Text(
-                                    text = if (state.typingUserCount == 1) {
-                                        stringResource(Res.string.typing_single)
-                                    } else {
-                                        stringResource(Res.string.typing_multiple, state.typingUserCount)
-                                    },
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(horizontal = YapSpacing.sm, vertical = YapSpacing.xxs),
-                                )
-                            }
-                        }
-
                         items(listItems, key = { it.key }) { item ->
                             when (item) {
                                 is ChatListItem.DateSeparator -> DateSeparatorChip(label = item.label)
                                 is ChatListItem.MessageItem -> MessageBubble(message = item.message)
                             }
                         }
+
+                        if (state.typingUserCount > 0) {
+                            item(key = "typing_indicator") {
+                                TypingIndicatorBubble(
+                                    label = if (state.typingUserCount == 1) {
+                                        stringResource(Res.string.typing_single)
+                                    } else {
+                                        stringResource(Res.string.typing_multiple, state.typingUserCount)
+                                    },
+                                )
+                            }
+                        }
                     }
                 }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun TypingIndicatorBubble(
+    label: String,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = YapScreenHorizontalPadding),
+        horizontalArrangement = Arrangement.Start,
+    ) {
+        Row(
+            modifier = Modifier
+                .widthIn(min = 72.dp, max = 280.dp)
+                .clip(
+                    RoundedCornerShape(
+                        topStart = YapSpacing.sm,
+                        topEnd = YapSpacing.sm,
+                        bottomStart = YapSpacing.xxs,
+                        bottomEnd = YapSpacing.sm,
+                    ),
+                )
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(horizontal = YapSpacing.sm, vertical = YapSpacing.xs),
+            horizontalArrangement = Arrangement.spacedBy(YapSpacing.xs),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TypingDots()
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.Medium,
+            )
+        }
+    }
+}
+
+@Composable
+private fun TypingDots(
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colorScheme.primary,
+) {
+    val transition = rememberInfiniteTransition(label = "typing_dots")
+    val dotDelaysMs = listOf(0, 160, 320)
+
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(YapSpacing.xxs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        dotDelaysMs.forEachIndexed { index, delayMs ->
+            val alpha by transition.animateFloat(
+                initialValue = 0.25f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(durationMillis = 450, delayMillis = delayMs),
+                    repeatMode = RepeatMode.Reverse,
+                ),
+                label = "typing_dot_$index",
+            )
+            Box(
+                modifier = Modifier
+                    .size(7.dp)
+                    .clip(CircleShape)
+                    .background(color.copy(alpha = alpha)),
+            )
         }
     }
 }
@@ -365,7 +573,8 @@ private fun ReadReceiptIndicator(
         ReadReceiptVisual.Pending -> "…"
         ReadReceiptVisual.Failed -> "!"
         ReadReceiptVisual.Sent -> "✓"
-        ReadReceiptVisual.Delivered, ReadReceiptVisual.Read -> "✓✓"
+        ReadReceiptVisual.Delivered -> "✓✓"
+        ReadReceiptVisual.Read -> "✓✓"
     }
     Text(
         text = symbol,
@@ -385,6 +594,7 @@ private fun MessageInputBar(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .chatMessageInputInsets()
             .background(MaterialTheme.colorScheme.surface)
             .padding(horizontal = YapSpacing.sm, vertical = YapSpacing.xs),
     ) {

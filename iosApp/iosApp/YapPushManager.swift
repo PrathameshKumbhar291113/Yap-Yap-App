@@ -45,14 +45,9 @@ final class YapPushManager: NSObject {
     }
 
     func registerForRemoteNotifications() {
-        #if targetEnvironment(simulator)
-        // APNs is unavailable on Simulator — local notifications still work.
-        return
-        #else
         DispatchQueue.main.async {
             UIApplication.shared.registerForRemoteNotifications()
         }
-        #endif
     }
 
     func handleDeviceToken(_ deviceToken: Data) {
@@ -71,7 +66,7 @@ final class YapPushManager: NSObject {
     }
 
     private func fetchToken() {
-        #if canImport(FirebaseMessaging) && !targetEnvironment(simulator)
+        #if canImport(FirebaseMessaging)
         Messaging.messaging().token { token, _ in
             IosPushBridge.shared.deliverToken(token: token)
         }
@@ -81,26 +76,39 @@ final class YapPushManager: NSObject {
     }
 
     private func deleteToken() {
-        #if canImport(FirebaseMessaging) && !targetEnvironment(simulator)
+        #if canImport(FirebaseMessaging)
         Messaging.messaging().deleteToken { _ in }
         #endif
     }
 
     private func showLocalNotification(title: String, body: String, payloadJson: String) {
-        let content = UNMutableNotificationContent()
-        content.title = title
-        content.body = body
-        content.sound = .default
-        if let data = payloadJson.data(using: .utf8),
-           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            content.userInfo = object
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            let allowed: Bool
+            switch settings.authorizationStatus {
+            case .authorized, .provisional, .ephemeral:
+                allowed = true
+            default:
+                allowed = false
+            }
+            guard allowed else { return }
+
+            let content = UNMutableNotificationContent()
+            content.title = title
+            content.body = body
+            content.sound = .default
+            if let data = payloadJson.data(using: .utf8),
+               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                content.userInfo = object
+            }
+            let request = UNNotificationRequest(
+                identifier: UUID().uuidString,
+                content: content,
+                trigger: nil
+            )
+            DispatchQueue.main.async {
+                UNUserNotificationCenter.current().add(request)
+            }
         }
-        let request = UNNotificationRequest(
-            identifier: UUID().uuidString,
-            content: content,
-            trigger: nil
-        )
-        UNUserNotificationCenter.current().add(request)
     }
 
     fileprivate func deliverDataDictionary(_ data: [AnyHashable: Any]) {
@@ -131,11 +139,7 @@ extension YapPushManager: UNUserNotificationCenterDelegate {
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
         deliverDataDictionary(notification.request.content.userInfo)
-        if #available(iOS 14.0, *) {
-            completionHandler([.banner, .list, .sound])
-        } else {
-            completionHandler([.alert, .sound])
-        }
+        completionHandler([])
     }
 
     func userNotificationCenter(

@@ -11,11 +11,13 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.lifecycleScope
 import com.yapyap.core.push.PushIntentParser
 import com.yapyap.core.push.PushNotificationCoordinator
+import com.yapyap.core.session.SessionManager
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
 
 class MainActivity : ComponentActivity() {
     private val pushNotificationCoordinator: PushNotificationCoordinator by inject()
+    private val sessionManager: SessionManager by inject()
 
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -47,6 +49,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        sessionManager.onAppForeground()
         pushNotificationCoordinator.onAppForeground()
     }
 

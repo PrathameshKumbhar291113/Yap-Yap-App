@@ -2,16 +2,15 @@ package com.yapyap.core.push
 
 import co.touchlab.kermit.Logger
 import com.yapyap.core.datastore.TokenStorage
-import com.yapyap.core.push.model.LocalPushNotification
 import com.yapyap.core.push.model.PushMessageType
 import com.yapyap.core.push.model.PushNavigationTarget
-import com.yapyap.core.push.model.PushNotificationChannel
 import com.yapyap.core.push.model.PushPermissionStatus
 import com.yapyap.core.realtime.ActiveConversationTracker
-import com.yapyap.core.realtime.ChatRealtimeClient
 import com.yapyap.core.util.DispatcherProvider
 import com.yapyap.feature.auth.domain.model.AuthState
 import com.yapyap.feature.auth.domain.usecase.ObserveAuthStateUseCase
+import com.yapyap.feature.chat.domain.repository.ChatRepository
+import com.yapyap.feature.conversations.domain.repository.ConversationRepository
 import com.yapyap.feature.devices.data.repository.DeviceRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
@@ -26,10 +25,11 @@ class PushNotificationCoordinator(
     private val deviceRepository: DeviceRepository,
     private val tokenStorage: TokenStorage,
     private val observeAuthStateUseCase: ObserveAuthStateUseCase,
-    private val chatRealtimeClient: ChatRealtimeClient,
     private val activeConversationTracker: ActiveConversationTracker,
     private val deduplicator: PushMessageDeduplicator,
     private val navigationRouter: PushNavigationRouter,
+    private val conversationRepository: ConversationRepository,
+    private val chatRepository: ChatRepository,
     private val dispatcherProvider: DispatcherProvider,
 ) {
     private val log = Logger.withTag("PushNotifications")
@@ -56,11 +56,16 @@ class PushNotificationCoordinator(
             ),
         )
         initialized = true
+        if (
+            status == PushPermissionStatus.Granted &&
+            observeAuthStateUseCase().value is AuthState.Authenticated
+        ) {
+            registerDeviceWithBackend()
+        }
     }
 
     fun start(parentScope: CoroutineScope) {
         scope = parentScope
-        registerPushAppForegroundCallback { onAppForeground() }
         parentScope.launch(dispatcherProvider.default) {
             initialize()
         }
@@ -83,7 +88,9 @@ class PushNotificationCoordinator(
     fun onPermissionResult(granted: Boolean) {
         tokenStorage.setPushPermissionDenied(!granted)
         if (granted) {
-            scope?.launch { registerDeviceWithBackend() }
+            scope?.launch {
+                registerDeviceWithBackend()
+            }
         }
     }
 
@@ -92,9 +99,12 @@ class PushNotificationCoordinator(
             pushPlatform.onAppForeground()
             if (observeAuthStateUseCase().value is AuthState.Authenticated) {
                 verifyTokenRegistration()
+                conversationRepository.refreshConversations()
             }
         }
     }
+
+    fun onAppBackground() = Unit
 
     suspend fun registerDeviceWithBackend() {
         if (tokenStorage.isPushPermissionDenied()) {
@@ -102,7 +112,7 @@ class PushNotificationCoordinator(
             return
         }
         registerMutex.withLock {
-            val token = pushPlatform.getDeviceToken()
+            val token = fetchDeviceTokenWithRetry()
             if (token == null) {
                 log.w { "Skipping device register — no FCM token yet" }
                 return
@@ -113,6 +123,19 @@ class PushNotificationCoordinator(
             }
             registerWithRetry(token)
         }
+    }
+
+    private suspend fun fetchDeviceTokenWithRetry(): String? {
+        repeat(TOKEN_FETCH_ATTEMPTS) { attempt ->
+            val token = pushPlatform.getDeviceToken()
+            if (!token.isNullOrBlank()) {
+                return token
+            }
+            if (attempt < TOKEN_FETCH_ATTEMPTS - 1) {
+                delay(TOKEN_FETCH_DELAY_MS)
+            }
+        }
+        return null
     }
 
     suspend fun unregisterDevice() {
@@ -154,27 +177,29 @@ class PushNotificationCoordinator(
             deduplicator.markSeen(messageId)
         }
 
+        syncIncomingPushMessage(payload)
+
         if (fromUserTap) {
             payload.conversationId?.let { id ->
                 navigationRouter.navigate(PushNavigationTarget.Chat(id))
             }
-            return
         }
+    }
 
-        if (conversationId != null && shouldSuppressForegroundNotification(conversationId)) {
-            return
-        }
-
-        val title = payload.senderName?.takeIf { it.isNotBlank() } ?: "New message"
-        val body = payload.preview?.takeIf { it.isNotBlank() } ?: "You have a new message"
-        pushPlatform.showLocalNotification(
-            LocalPushNotification(
-                title = title,
-                body = body,
-                channel = PushNotificationChannel.Messages,
-                data = payload.raw,
-            ),
+    private suspend fun syncIncomingPushMessage(payload: com.yapyap.core.push.model.PushPayload) {
+        val message = payload.toIncomingMessage() ?: return
+        val currentUserId = (observeAuthStateUseCase().value as? AuthState.Authenticated)?.user?.id
+        chatRepository.upsertIncomingMessage(message)
+        val isViewing = activeConversationTracker.isViewing(message.conversationId)
+        val wasUnknown = conversationRepository.applyIncomingMessage(
+            conversationId = message.conversationId,
+            message = message,
+            currentUserId = currentUserId,
+            isViewingConversation = isViewing,
         )
+        if (wasUnknown) {
+            conversationRepository.refreshConversations()
+        }
     }
 
     private fun handleIncomingCall(payload: com.yapyap.core.push.model.PushPayload, fromUserTap: Boolean) {
@@ -182,24 +207,7 @@ class PushNotificationCoordinator(
             payload.callSessionId?.let { sessionId ->
                 navigationRouter.navigate(PushNavigationTarget.IncomingCall(sessionId))
             }
-            return
         }
-
-        val title = payload.callerName?.takeIf { it.isNotBlank() } ?: "Incoming call"
-        val callLabel = payload.callType?.takeIf { it.isNotBlank() } ?: "call"
-        pushPlatform.showLocalNotification(
-            LocalPushNotification(
-                title = title,
-                body = "Incoming $callLabel",
-                channel = PushNotificationChannel.Calls,
-                data = payload.raw,
-            ),
-        )
-    }
-
-    private fun shouldSuppressForegroundNotification(conversationId: Int): Boolean {
-        if (!chatRealtimeClient.isReady) return false
-        return activeConversationTracker.isViewing(conversationId)
     }
 
     private suspend fun onTokenRefreshed(token: String) {
@@ -213,7 +221,7 @@ class PushNotificationCoordinator(
         if (tokenStorage.isPushPermissionDenied()) return
         val current = pushPlatform.getDeviceToken() ?: return
         val stored = tokenStorage.getDeviceToken()
-        if (current != stored) {
+        if (current != stored || stored.isNullOrBlank()) {
             registerWithRetry(current)
         }
     }
@@ -237,5 +245,10 @@ class PushNotificationCoordinator(
                 delay((1L shl attempt) * 1_000L)
             }
         }
+    }
+
+    private companion object {
+        const val TOKEN_FETCH_ATTEMPTS = 4
+        const val TOKEN_FETCH_DELAY_MS = 1_500L
     }
 }

@@ -41,6 +41,16 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     }
 
     func applicationDidBecomeActive(_ application: UIApplication) {
+        YapBackgroundKeepAlive.shared.end()
         IosAppLifecycleBridge.shared.notifyForeground()
+    }
+
+    func applicationWillResignActive(_ application: UIApplication) {
+        IosAppLifecycleBridge.shared.notifyWillResignActive()
+    }
+
+    func applicationDidEnterBackground(_ application: UIApplication) {
+        YapBackgroundKeepAlive.shared.begin()
+        IosAppLifecycleBridge.shared.notifyDidEnterBackground()
     }
 }

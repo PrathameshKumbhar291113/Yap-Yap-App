@@ -1,15 +1,27 @@
 package com.yapyap.core.push
 
+import android.Manifest
 import android.app.PendingIntent
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import com.yapyap.core.push.model.LocalPushNotification
 
 object PushNotificationDisplay {
     private var notificationId = 1_000
 
     fun show(context: android.content.Context, notification: LocalPushNotification) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val granted = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS,
+            ) == PackageManager.PERMISSION_GRANTED
+            if (!granted) return
+        }
+
         val launchIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)
             ?: return
         notification.data.forEach { (key, value) ->

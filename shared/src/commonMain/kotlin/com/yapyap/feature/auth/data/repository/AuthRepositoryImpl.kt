@@ -104,8 +104,9 @@ class AuthRepositoryImpl(
 
     private fun restoreSession() {
         val cachedUserJson = tokenStorage.getCachedUser()
-        val hasToken = tokenStorage.getAccessToken() != null
-        _authState.value = if (hasToken && cachedUserJson != null) {
+        val hasAccessToken = !tokenStorage.getAccessToken().isNullOrBlank()
+        val hasRefreshToken = !tokenStorage.getRefreshToken().isNullOrBlank()
+        _authState.value = if (hasAccessToken && cachedUserJson != null) {
             runCatching {
                 AuthState.Authenticated(
                     appJson.decodeFromString(UserDto.serializer(), cachedUserJson).toDomain(),
@@ -115,6 +116,9 @@ class AuthRepositoryImpl(
                 AuthState.Unauthenticated
             }
         } else {
+            if (hasAccessToken || hasRefreshToken) {
+                clearSession()
+            }
             AuthState.Unauthenticated
         }
     }

@@ -52,17 +52,27 @@ The seed script is idempotent (`ON CONFLICT` upserts) — safe to re-run.
 
 ## 3. Run the app (debug)
 
-Build and run a **debug** build. By default, debug and release both use the hosted API:
+Build and run a **debug** build. Debug uses the local backend URLs from `gradle.properties`:
 
-**`https://yapyap-backend.onrender.com`** ([health check](https://yapyap-backend.onrender.com))
+| Platform | API (`BASE_URL`) | Socket (`SOCKET_URL`) |
+|----------|------------------|------------------------|
+| **Android emulator** | `http://10.0.2.2:8080` | `http://10.0.2.2:8080` |
+| **iOS Simulator** | `http://localhost:8080` | `http://localhost:8080` |
+| **Physical device** | Set `yapyap.baseUrl=http://192.168.1.x:8080` in `local.properties` (both API + socket) |
 
-| Platform | Default `BASE_URL` | Local override (`local.properties`) |
-|----------|-------------------|-------------------------------------|
-| **Android emulator** | Render (HTTPS) | `yapyap.baseUrl=http://10.0.2.2:8080` |
-| **iOS Simulator** | Render (HTTPS) | `yapyap.baseUrl=http://localhost:8080` |
-| **Physical device** | Render (HTTPS) | `yapyap.baseUrl=http://192.168.1.x:8080` (your LAN IP) |
+Override order: `local.properties` (`yapyap.baseUrl` or per-platform keys) → `gradle.properties` → built-in defaults.
 
-Override order: `local.properties` → `gradle.properties` → Render default.
+**Release builds** always use **`https://yapyap-backend.onrender.com`** for both API and Socket.IO.
+
+```properties
+# gradle.properties (debug defaults)
+API_BASE_URL_ANDROID=http://10.0.2.2:8080/api
+API_BASE_URL_IOS=http://localhost:8080/api
+SOCKET_URL_ANDROID=http://10.0.2.2:8080
+SOCKET_URL_IOS=http://localhost:8080
+```
+
+> Note: API paths in the app already include `/api/...`, so `BASE_URL` is stored as the host root (`http://…:8080`). The `/api` suffix in `API_BASE_URL_*` is stripped at build time.
 
 ```bash
 # Android

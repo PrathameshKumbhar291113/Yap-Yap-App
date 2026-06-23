@@ -212,8 +212,14 @@ class ChatRepositoryImpl(
         readerUserId: Int?,
     ): Boolean {
         val id = message.id ?: return false
+
+        // Outgoing receipts must reflect the recipient's actions, not the sender marking their own chat read.
+        if (readerUserId != null && message.senderId == readerUserId) {
+            return false
+        }
+
         if (id == messageId) return true
-        if (readerUserId == null || message.senderId == readerUserId) return false
+        if (readerUserId == null) return false
         if (id > messageId) return false
         return status == MessageStatus.READ || status == MessageStatus.DELIVERED
     }

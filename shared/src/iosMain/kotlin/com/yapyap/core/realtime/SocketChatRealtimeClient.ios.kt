@@ -67,7 +67,7 @@ class SocketChatRealtimeClient(
         activeAccessToken = accessToken
         reconnectAttempt = 0
         reconnectJob?.cancel()
-        log.d { "connect requested to ${Environment.BASE_URL}" }
+        log.d { "connect requested to ${Environment.SOCKET_URL}" }
         reconnectJob = scope.launch {
             connectInternal(accessToken)
         }
@@ -123,7 +123,7 @@ class SocketChatRealtimeClient(
         connectMutex.withLock {
             nativeConnected = false
             _connectionState.value = RealtimeConnectionState.Connecting
-            IosSocketBridge.connect(Environment.BASE_URL, accessToken)
+            IosSocketBridge.connect(Environment.SOCKET_URL, accessToken)
         }
     }
 

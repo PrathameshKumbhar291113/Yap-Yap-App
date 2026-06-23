@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import com.yapyap.core.navigation.YapYapNavHost
 import com.yapyap.core.push.PushNotificationCoordinator
 import com.yapyap.core.session.SessionManager
+import com.yapyap.core.ui.YapZeroWindowInsets
 import com.yapyap.core.theme.YapYapTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -26,13 +27,15 @@ fun YapYapApp() {
     val pushNotificationCoordinator: PushNotificationCoordinator = koinInject()
 
     LaunchedEffect(sessionManager, pushNotificationCoordinator) {
-        sessionManager.start(CoroutineScope(coroutineContext + SupervisorJob()))
-        pushNotificationCoordinator.start(CoroutineScope(coroutineContext + SupervisorJob()))
+        val appScope = CoroutineScope(coroutineContext + SupervisorJob())
+        sessionManager.start(appScope)
+        pushNotificationCoordinator.start(appScope)
     }
 
     YapYapTheme(darkTheme = true) {
         Scaffold(
             modifier = Modifier.fillMaxSize(),
+            contentWindowInsets = YapZeroWindowInsets,
             snackbarHost = { SnackbarHost(snackbarHostState) },
         ) { innerPadding ->
             Box(

@@ -86,6 +86,46 @@ class ConversationRepositoryImplTest {
     }
 
     @Test
+    fun applyIncomingMessage_movesUpdatedConversationToTop() = runTest {
+        repository.applyIncomingMessage(
+            conversationId = 1,
+            message = sampleMessage(
+                conversationId = 1,
+                id = 1,
+                senderId = 2,
+                createdAt = "2026-06-21T10:00:00Z",
+            ),
+            currentUserId = 1,
+        )
+        repository.applyIncomingMessage(
+            conversationId = 2,
+            message = sampleMessage(
+                conversationId = 2,
+                id = 2,
+                senderId = 2,
+                createdAt = "2026-06-21T11:00:00Z",
+            ),
+            currentUserId = 1,
+        )
+        repository.applyIncomingMessage(
+            conversationId = 1,
+            message = sampleMessage(
+                conversationId = 1,
+                id = 3,
+                senderId = 2,
+                content = "Newest",
+                createdAt = "2026-06-21T12:00:00Z",
+            ),
+            currentUserId = 1,
+        )
+
+        val conversations = repository.observeConversations().first()
+        assertEquals(2, conversations.size)
+        assertEquals(1, conversations.first().id)
+        assertEquals("Newest", conversations.first().lastMessage?.content)
+    }
+
+    @Test
     fun applyConversationRead_clearsUnreadBadge() = runTest {
         repository.applyIncomingMessage(
             conversationId = 99,
@@ -109,6 +149,7 @@ class ConversationRepositoryImplTest {
         id: Int,
         senderId: Int,
         content: String = "Hello",
+        createdAt: String = "2026-06-21T12:00:00Z",
     ): Message = Message(
         id = id,
         conversationId = conversationId,
@@ -118,6 +159,6 @@ class ConversationRepositoryImplTest {
         mediaUrl = null,
         status = MessageStatus.SENT,
         clientMessageId = null,
-        createdAt = "2026-06-21T12:00:00Z",
+        createdAt = createdAt,
     )
 }

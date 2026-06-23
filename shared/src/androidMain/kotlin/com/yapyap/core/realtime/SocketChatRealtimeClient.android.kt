@@ -60,7 +60,7 @@ class SocketChatRealtimeClient(
         activeAccessToken = accessToken
         reconnectAttempt = 0
         reconnectJob?.cancel()
-        log.d { "connect requested to ${Environment.BASE_URL}" }
+        log.d { "connect requested to ${Environment.SOCKET_URL}" }
         reconnectJob = scope.launch {
             connectInternal(accessToken)
         }
@@ -149,8 +149,8 @@ class SocketChatRealtimeClient(
                 .setTransports(arrayOf("polling", "websocket"))
                 .build()
 
-            log.d { "opening socket to ${Environment.BASE_URL}" }
-            val newSocket = IO.socket(Environment.BASE_URL, options)
+            log.d { "opening socket to ${Environment.SOCKET_URL}" }
+            val newSocket = IO.socket(Environment.SOCKET_URL, options)
             registerListeners(newSocket)
             socket = newSocket
             newSocket.connect()

@@ -20,10 +20,11 @@ val pushModule = module {
             deviceRepository = get(),
             tokenStorage = get(),
             observeAuthStateUseCase = get(),
-            chatRealtimeClient = get(),
             activeConversationTracker = get(),
             deduplicator = get(),
             navigationRouter = get(),
+            conversationRepository = get(),
+            chatRepository = get(),
             dispatcherProvider = get(),
         )
     }

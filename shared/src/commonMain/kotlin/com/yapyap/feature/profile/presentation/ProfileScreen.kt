@@ -35,6 +35,7 @@ import com.yapyap.core.di.koinViewModel
 import com.yapyap.core.theme.YapSpacing
 import com.yapyap.core.ui.YapAvatar
 import com.yapyap.core.ui.YapContentContainer
+import com.yapyap.core.ui.YapInsets
 import com.yapyap.core.ui.YapScreenHorizontalPadding
 import org.jetbrains.compose.resources.stringResource
 import yapyap.shared.generated.resources.Res
@@ -59,7 +60,10 @@ fun ProfileScreen(
     Scaffold(
         contentWindowInsets = YapZeroWindowInsets,
         topBar = {
-            TopAppBar(title = { Text(stringResource(Res.string.profile)) })
+            TopAppBar(
+                title = { Text(stringResource(Res.string.profile)) },
+                windowInsets = YapInsets.topAppBar,
+            )
         },
     ) { innerPadding ->
         when (val state = uiState) {

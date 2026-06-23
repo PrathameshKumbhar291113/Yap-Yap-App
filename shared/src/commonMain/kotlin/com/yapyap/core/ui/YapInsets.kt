@@ -17,4 +17,12 @@ object YapInsets {
     val content: WindowInsets
         @Composable
         get() = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
+
+    /**
+     * Parent [androidx.compose.material3.Scaffold] already applies [content]; TopAppBar should not
+     * add status-bar padding again.
+     */
+    val topAppBar: WindowInsets
+        @Composable
+        get() = YapZeroWindowInsets
 }

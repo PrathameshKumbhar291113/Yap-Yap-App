@@ -2,6 +2,7 @@ package com.yapyap.core.realtime
 
 import com.yapyap.core.push.PushMessageDeduplicator
 import com.yapyap.core.push.PushPlatform
+import com.yapyap.core.push.isAppInForeground
 import com.yapyap.core.push.model.LocalPushNotification
 import com.yapyap.core.push.model.PushNotificationChannel
 import com.yapyap.feature.auth.domain.model.AuthState
@@ -60,7 +61,11 @@ class ChatRealtimeRepository(
 
     private suspend fun handleMessageNew(event: SocketEvent.MessageNew) {
         val message = event.message.toDomain()
-        message.id?.let { deduplicator.markSeen(it.toString()) }
+        val messageId = message.id?.toString()
+        val alreadyHandled = messageId != null && deduplicator.hasSeen(messageId)
+        if (messageId != null) {
+            deduplicator.markSeen(messageId)
+        }
         chatRepository.upsertIncomingMessage(message)
 
         val isViewing = activeConversationTracker.isViewing(event.conversationId)
@@ -86,29 +91,32 @@ class ChatRealtimeRepository(
                 }
             }
         }
-        if (isFromOther && !activeConversationTracker.isViewing(event.conversationId)) {
+        if (isFromOther && !activeConversationTracker.isViewing(event.conversationId) && !alreadyHandled) {
             val preview = message.previewText()
-            incomingMessageNotifier.notify(
-                IncomingMessageNotification(
-                    conversationId = event.conversationId,
-                    preview = preview,
-                ),
-            )
-            val notificationData = buildMap {
-                put("type", "new_message")
-                put("conversationId", event.conversationId.toString())
-                put("senderId", message.senderId.toString())
-                message.id?.let { put("messageId", it.toString()) }
-                put("preview", preview)
+            if (!isAppInForeground()) {
+                val notificationData = buildMap {
+                    put("type", "new_message")
+                    put("conversationId", event.conversationId.toString())
+                    put("senderId", message.senderId.toString())
+                    message.id?.let { put("messageId", it.toString()) }
+                    put("preview", preview)
+                }
+                pushPlatform.showLocalNotification(
+                    LocalPushNotification(
+                        title = "New message",
+                        body = preview,
+                        channel = PushNotificationChannel.Messages,
+                        data = notificationData,
+                    ),
+                )
+            } else {
+                incomingMessageNotifier.notify(
+                    IncomingMessageNotification(
+                        conversationId = event.conversationId,
+                        preview = preview,
+                    ),
+                )
             }
-            pushPlatform.showLocalNotification(
-                LocalPushNotification(
-                    title = "New message",
-                    body = preview,
-                    channel = PushNotificationChannel.Messages,
-                    data = notificationData,
-                ),
-            )
         }
     }
 

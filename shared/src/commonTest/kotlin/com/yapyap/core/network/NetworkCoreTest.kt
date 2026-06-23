@@ -49,6 +49,10 @@ class AuthTokenProviderContractTest {
         override fun getRefreshToken(): String? = refresh
         override fun saveCachedUser(json: String?) = Unit
         override fun getCachedUser(): String? = null
+        override fun saveDeviceToken(token: String?) = Unit
+        override fun getDeviceToken(): String? = null
+        override fun setPushPermissionDenied(denied: Boolean) = Unit
+        override fun isPushPermissionDenied(): Boolean = false
         override fun clear() {
             access = null
             refresh = null

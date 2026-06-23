@@ -46,6 +46,7 @@ fun RegisterScreen(
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(Res.string.create_account)) },
+                windowInsets = YapInsets.topAppBar,
                 navigationIcon = {
                     TextButton(onClick = onNavigateToLogin) {
                         Text(stringResource(Res.string.back))

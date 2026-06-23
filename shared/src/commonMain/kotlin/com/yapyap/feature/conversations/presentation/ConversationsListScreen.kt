@@ -29,6 +29,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -47,6 +48,7 @@ import com.yapyap.core.ui.YapContentContainer
 import com.yapyap.core.ui.YapDrawable
 import com.yapyap.core.ui.YapIcon
 import com.yapyap.core.ui.YapScreenHorizontalPadding
+import com.yapyap.core.ui.YapInsets
 import com.yapyap.core.ui.YapZeroWindowInsets
 import com.yapyap.feature.auth.presentation.AuthValidator
 import org.jetbrains.compose.resources.stringResource
@@ -77,6 +79,10 @@ fun ConversationsListScreen(
     val newChatError by viewModel.newChatError.collectAsState()
     var showNewChatDialog by remember { mutableStateOf(false) }
 
+    LaunchedEffect(Unit) {
+        viewModel.refresh()
+    }
+
     if (showNewChatDialog) {
         NewChatDialog(
             isLoading = isCreatingChat,
@@ -99,6 +105,7 @@ fun ConversationsListScreen(
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(Res.string.chats)) },
+                windowInsets = YapInsets.topAppBar,
                 actions = {
                     TextButton(onClick = { showNewChatDialog = true }) {
                         Text(stringResource(Res.string.new_chat))

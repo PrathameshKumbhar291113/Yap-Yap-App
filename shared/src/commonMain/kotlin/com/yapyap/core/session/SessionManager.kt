@@ -2,6 +2,7 @@ package com.yapyap.core.session
 
 import com.yapyap.core.datastore.TokenStorage
 import com.yapyap.core.network.SessionEventPublisher
+import com.yapyap.core.network.Environment
 import com.yapyap.core.realtime.ChatRealtimeClient
 import com.yapyap.core.realtime.RealtimeCoordinator
 import com.yapyap.core.util.DispatcherProvider
@@ -68,5 +69,23 @@ class SessionManager(
 
     fun disconnectRealtime() {
         chatRealtimeClient.disconnect()
+    }
+
+    fun onAppForeground() {
+        val token = tokenStorage.getAccessToken()
+        if (
+            !token.isNullOrBlank() &&
+            authRepository.authState.value is AuthState.Authenticated
+        ) {
+            chatRealtimeClient.connect(token)
+        }
+    }
+
+    fun onAppBackground() {
+        // Debug/local: keep socket alive so background messages trigger local notifications
+        // without requiring FCM (emulator + simulator). Release disconnects for real push.
+        if (!Environment.isDebug) {
+            disconnectRealtime()
+        }
     }
 }

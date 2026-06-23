@@ -89,7 +89,10 @@ fun LoginScreen(
     Scaffold(
         contentWindowInsets = YapInsets.content,
         topBar = {
-            TopAppBar(title = { Text(stringResource(Res.string.sign_in)) })
+            TopAppBar(
+                title = { Text(stringResource(Res.string.sign_in)) },
+                windowInsets = YapInsets.topAppBar,
+            )
         },
     ) { innerPadding ->
         AuthForm(

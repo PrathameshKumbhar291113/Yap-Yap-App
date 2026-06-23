@@ -7,6 +7,7 @@ sealed interface ChatUiState {
         val messages: List<MessageUiModel>,
         val isLoadingOlder: Boolean,
         val hasMore: Boolean,
+        val unreadCount: Int = 0,
         val sendError: String? = null,
         val typingUserCount: Int = 0,
         val isSending: Boolean = false,

@@ -24,29 +24,72 @@ if (findProperty("buildkonfig.flavor") == null) {
 
 val yapProductionBaseUrl = "https://yapyap-backend.onrender.com"
 
-val yapBaseUrlOverride = run {
+fun readYapProperty(key: String): String? {
     val localProperties = Properties()
     val localFile = rootProject.file("local.properties")
     if (localFile.exists()) {
         localFile.inputStream().use { localProperties.load(it) }
     }
-    localProperties.getProperty("yapyap.baseUrl")
-        ?: findProperty("yapyap.baseUrl") as String?
-        ?: yapProductionBaseUrl
+    return localProperties.getProperty(key) ?: findProperty(key) as String?
 }
+
+/** Ktor paths already include `/api/...`; strip a trailing `/api` if present in gradle.properties. */
+fun normalizeApiHost(url: String): String = url.trimEnd('/').removeSuffix("/api")
+
+val legacyBaseUrlOverride = readYapProperty("yapyap.baseUrl")
+
+val debugApiHostAndroid = normalizeApiHost(
+    legacyBaseUrlOverride
+        ?: readYapProperty("API_BASE_URL_ANDROID")
+        ?: "http://10.0.2.2:8080",
+)
+val debugApiHostIos = normalizeApiHost(
+    legacyBaseUrlOverride
+        ?: readYapProperty("API_BASE_URL_IOS")
+        ?: "http://localhost:8080",
+)
+val debugSocketHostAndroid = (
+    legacyBaseUrlOverride
+        ?: readYapProperty("SOCKET_URL_ANDROID")
+        ?: debugApiHostAndroid
+    ).trimEnd('/')
+val debugSocketHostIos = (
+    legacyBaseUrlOverride
+        ?: readYapProperty("SOCKET_URL_IOS")
+        ?: debugApiHostIos
+    ).trimEnd('/')
 
 buildkonfig {
     packageName = "com.yapyap.core.config"
     objectName = "AppBuildConfig"
 
     defaultConfigs {
-        buildConfigField(STRING, "BASE_URL", yapBaseUrlOverride)
+        buildConfigField(STRING, "BASE_URL", yapProductionBaseUrl)
+        buildConfigField(STRING, "SOCKET_URL", yapProductionBaseUrl)
         buildConfigField(BOOLEAN, "IS_DEBUG", "false")
     }
 
     defaultConfigs("debug") {
         buildConfigField(BOOLEAN, "IS_DEBUG", "true")
-        buildConfigField(STRING, "BASE_URL", yapBaseUrlOverride)
+    }
+
+    defaultConfigs("release") {
+        buildConfigField(STRING, "BASE_URL", yapProductionBaseUrl)
+        buildConfigField(STRING, "SOCKET_URL", yapProductionBaseUrl)
+        buildConfigField(BOOLEAN, "IS_DEBUG", "false")
+    }
+
+    targetConfigs("debug") {
+        create("android") {
+            buildConfigField(STRING, "BASE_URL", debugApiHostAndroid)
+            buildConfigField(STRING, "SOCKET_URL", debugSocketHostAndroid)
+        }
+        listOf("iosArm64", "iosSimulatorArm64").forEach { iosTarget ->
+            create(iosTarget) {
+                buildConfigField(STRING, "BASE_URL", debugApiHostIos)
+                buildConfigField(STRING, "SOCKET_URL", debugSocketHostIos)
+            }
+        }
     }
 }
 
@@ -79,6 +122,7 @@ kotlin {
     
     sourceSets {
         androidMain.dependencies {
+            implementation(libs.androidx.lifecycle.process)
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.ktor.client.okhttp)
             implementation(libs.androidx.security.crypto)

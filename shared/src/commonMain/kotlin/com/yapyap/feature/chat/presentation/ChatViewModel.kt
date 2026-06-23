@@ -22,7 +22,6 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -63,6 +62,7 @@ class ChatViewModel(
         observeChatUseCase(conversationId),
         observeAuthStateUseCase(),
         observeTypingStateUseCase(conversationId),
+        getConversationsUseCase(),
         isInitialLoading,
         initialError,
         sendError,
@@ -71,11 +71,13 @@ class ChatViewModel(
         val messages = values[0] as List<com.yapyap.feature.chat.domain.entity.Message>
         val authState = values[1] as AuthState
         val typingState = values[2] as com.yapyap.core.realtime.TypingState
-        val loading = values[3] as Boolean
-        val error = values[4] as String?
-        val sendErr = values[5] as String?
-        val sending = values[6] as Boolean
+        val conversations = values[3] as List<com.yapyap.feature.conversations.domain.entity.Conversation>
+        val loading = values[4] as Boolean
+        val error = values[5] as String?
+        val sendErr = values[6] as String?
+        val sending = values[7] as Boolean
         val currentUserId = (authState as? AuthState.Authenticated)?.user?.id
+        val unreadCount = conversations.find { it.id == conversationId }?.unreadCount ?: 0
         when {
             currentUserId == null -> ChatUiState.Loading
             error != null && messages.isEmpty() -> ChatUiState.Error(error)
@@ -84,6 +86,7 @@ class ChatViewModel(
                 messages = messages.map { it.toUiModel(currentUserId) },
                 isLoadingOlder = loadMoreMessagesUseCase.isLoadingOlder(conversationId),
                 hasMore = loadMoreMessagesUseCase.hasMore(conversationId),
+                unreadCount = unreadCount,
                 sendError = sendErr,
                 typingUserCount = typingState.typingUserIds.count { it != currentUserId },
                 isSending = sending,
@@ -98,20 +101,22 @@ class ChatViewModel(
     init {
         activeConversationTracker.setActiveConversationId(conversationId)
         refreshLatest()
-        observeReadCursor()
     }
 
-    private fun observeReadCursor() {
+    fun onReachedBottom() {
         viewModelScope.launch {
-            observeChatUseCase(conversationId)
-                .map { messages -> messages.mapNotNull { message -> message.id }.maxOrNull() }
-                .distinctUntilChanged()
-                .collect { latestId ->
-                    if (latestId != null && latestId != lastMarkedMessageId) {
-                        markConversationReadUseCase(conversationId, latestId)
-                            .onSuccess { lastMarkedMessageId = latestId }
-                    }
-                }
+            val authState = observeAuthStateUseCase().value
+            val currentUserId = (authState as? AuthState.Authenticated)?.user?.id ?: return@launch
+            val messages = observeChatUseCase(conversationId).first()
+            val latestIncomingId = messages
+                .asSequence()
+                .filter { it.senderId != currentUserId }
+                .mapNotNull { it.id }
+                .maxOrNull() ?: return@launch
+            if (latestIncomingId != lastMarkedMessageId) {
+                markConversationReadUseCase(conversationId, latestIncomingId)
+                    .onSuccess { lastMarkedMessageId = latestIncomingId }
+            }
         }
     }
 

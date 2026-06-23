@@ -22,7 +22,7 @@ class ConversationRepositoryImpl(
     override suspend fun refreshConversations(): Result<Unit> {
         return runCatching {
             val items = conversationApi.getConversations().getOrThrow()
-            _conversations.value = items.map { it.toDomain() }
+            _conversations.value = sortByLatest(items.map { it.toDomain() })
         }
     }
 
@@ -32,7 +32,7 @@ class ConversationRepositoryImpl(
             val conversation = summary.toDomain()
             val current = _conversations.value
             if (current.none { it.id == conversation.id }) {
-                _conversations.value = listOf(conversation) + current
+                _conversations.value = sortByLatest(listOf(conversation) + current)
             }
             conversation
         }
@@ -47,7 +47,7 @@ class ConversationRepositoryImpl(
         if (existing.unreadCount == 0) return
 
         val updated = existing.copy(unreadCount = 0)
-        _conversations.value = listOf(updated) + current.filterNot { it.id == conversationId }
+        _conversations.value = sortByLatest(listOf(updated) + current.filterNot { it.id == conversationId })
     }
 
     override fun applyIncomingMessage(
@@ -61,7 +61,7 @@ class ConversationRepositoryImpl(
         var current = _conversations.value
         val wasUnknown = current.none { it.id == conversationId }
         if (wasUnknown) {
-            current = listOf(stubConversation(conversationId, message)) + current
+            current = sortByLatest(listOf(stubConversation(conversationId, message)) + current)
             _conversations.value = current
         }
 
@@ -89,9 +89,16 @@ class ConversationRepositoryImpl(
             unreadCount = unreadCount,
         )
 
-        _conversations.value = listOf(updated) + current.filterNot { it.id == conversationId }
+        _conversations.value = sortByLatest(listOf(updated) + current.filterNot { it.id == conversationId })
         return wasUnknown
     }
+
+    private fun sortByLatest(conversations: List<Conversation>): List<Conversation> =
+        conversations.sortedWith(
+            compareByDescending<Conversation> { it.updatedAt }
+                .thenByDescending { it.lastMessage?.createdAt ?: it.createdAt }
+                .thenByDescending { it.id },
+        )
 
     private fun stubConversation(conversationId: Int, message: Message): Conversation {
         return Conversation(

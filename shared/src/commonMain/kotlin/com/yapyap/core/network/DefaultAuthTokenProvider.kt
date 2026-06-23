@@ -31,7 +31,9 @@ class DefaultAuthTokenProvider(
     override suspend fun refreshAccessToken(): Boolean {
         val refreshToken = getRefreshToken()
         if (refreshToken.isNullOrBlank()) {
-            onSessionExpired()
+            if (!getAccessToken().isNullOrBlank()) {
+                onSessionExpired()
+            }
             return false
         }
 

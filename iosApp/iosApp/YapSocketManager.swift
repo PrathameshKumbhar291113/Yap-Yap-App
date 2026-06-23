@@ -123,6 +123,9 @@ final class YapSocketManager {
     }
 
     private func deliverNative(event: String, payload: String?) {
+        if event == SocketConstants.shared.MESSAGE_NEW {
+            YapBackgroundKeepAlive.shared.begin()
+        }
         IosSocketBridge.shared.deliverNativeEvent(event: event, payload: payload)
     }
 }
