@@ -7,11 +7,11 @@ fun registerYapAppLifecycleCallbacks() {
     val koin = KoinPlatformTools.defaultContext().getOrNull() ?: return
     registerAppLifecycleCallbacks(
         onForeground = {
-            koin.get<SessionManager>().onAppForeground()
-            koin.get<PushNotificationCoordinator>().onAppForeground()
+            runCatching { koin.get<SessionManager>().onAppForeground() }
+            runCatching { koin.get<PushNotificationCoordinator>().onAppForeground() }
         },
         onBackground = {
-            koin.get<SessionManager>().onAppBackground()
+            runCatching { koin.get<SessionManager>().onAppBackground() }
         },
     )
 }

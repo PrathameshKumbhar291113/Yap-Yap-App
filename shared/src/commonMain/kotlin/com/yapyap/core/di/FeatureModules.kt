@@ -10,4 +10,4 @@ import com.yapyap.feature.profile.di.profileModule
 
 val featureModules = listOf(authModule, conversationsModule, chatModule, profileModule)
 
-val appModules = listOf(coreModule, networkModule, sessionModule) + featureModules + listOf(realtimeModule, pushModule)
+val appModules = listOf(coreModule, networkModule, sessionModule) + featureModules + listOf(pushModule, realtimeModule)

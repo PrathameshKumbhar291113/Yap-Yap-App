@@ -1,5 +1,6 @@
 package com.yapyap.feature.conversations.data.repository
 
+import com.yapyap.core.realtime.NoopMessageDeliveryAcknowledgementGateway
 import com.yapyap.feature.chat.domain.entity.Message
 import com.yapyap.feature.chat.domain.entity.MessageStatus
 import com.yapyap.feature.chat.domain.entity.MessageType
@@ -31,6 +32,7 @@ class ConversationRepositoryImplTest {
                 }
             },
         ),
+        NoopMessageDeliveryAcknowledgementGateway,
     )
 
     @Test

@@ -1,10 +1,11 @@
 package com.yapyap.core.push
 
 import com.yapyap.core.push.model.LocalPushNotification
+import com.yapyap.core.push.model.PushInboundMessage
 import com.yapyap.core.push.model.PushPermissionStatus
 
 data class PushPlatformHandlers(
-    val onMessage: (Map<String, String>) -> Unit,
+    val onMessage: (PushInboundMessage) -> Unit,
     val onTokenRefresh: (String) -> Unit,
     val onNotificationOpened: (Map<String, String>) -> Unit,
 )
@@ -16,6 +17,8 @@ interface PushPlatform {
     fun setHandlers(handlers: PushPlatformHandlers)
     suspend fun deleteToken()
     suspend fun onAppForeground()
+    fun usesInAppForegroundNotification(): Boolean
+    fun dismissConversationNotification(conversationId: String)
 }
 
 expect fun createPushPlatform(): PushPlatform

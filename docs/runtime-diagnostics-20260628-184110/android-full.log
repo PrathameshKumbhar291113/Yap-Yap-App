@@ -1,0 +1,33 @@
+06-28 18:41:13.494 I/FirebaseApp( 8932): Device unlocked: initializing all Firebase APIs for app [DEFAULT]
+06-28 18:41:13.508 I/FirebaseInitProvider( 8932): FirebaseApp initialization successful
+06-28 18:41:13.906 I/YapRuntimeDiag( 8932): [Lifecycle] ProcessLifecycle.onStart (foreground=true)
+06-28 18:41:13.912 I/YapRuntimeDiag( 8932): [Socket] connect requested url=http://192.168.5.185:8080
+06-28 18:41:13.921 I/YapRuntimeDiag( 8932): [Lifecycle] MainActivity.onResume
+06-28 18:41:13.923 I/YapRuntimeDiag( 8932): [Socket] connect requested url=http://192.168.5.185:8080
+06-28 18:41:13.954 I/YapRuntimeDiag( 8932): [Lifecycle] MainActivity.onPause
+06-28 18:41:14.218 I/YapRuntimeDiag( 8932): [Socket] connected
+06-28 18:41:15.217 I/YapRuntimeDiag( 8932): [Socket] connect requested url=http://192.168.5.185:8080
+06-28 18:41:15.293 I/YapRuntimeDiag( 8932): [Socket] connected
+06-28 18:41:15.296 I/YapRuntimeDiag( 8932): [Lifecycle] MainActivity.onStop
+06-28 18:41:15.296 I/YapRuntimeDiag( 8932): [Lifecycle] ProcessLifecycle.onStop (foreground=false)
+06-28 18:41:19.074 I/YapRuntimeDiag( 8932): [Socket] disconnected reason=transport error
+06-28 18:41:19.077 I/YapRuntimeDiag( 8932): [Socket] reconnect attempt=1 backoffMs=1000
+06-28 18:41:30.140 I/YapRuntimeDiag( 8932): [Socket] reconnect attempt=2 backoffMs=2000
+06-28 18:41:42.182 I/YapRuntimeDiag( 8932): [Socket] reconnect attempt=3 backoffMs=4000
+06-28 18:41:56.232 I/YapRuntimeDiag( 8932): [Socket] reconnect attempt=4 backoffMs=8000
+06-28 18:42:14.284 I/YapRuntimeDiag( 8932): [Socket] reconnect attempt=5 backoffMs=16000
+06-28 18:44:11.191 I/YapRuntimeDiag( 8932): [Lifecycle] ProcessLifecycle.onStart (foreground=true)
+06-28 18:44:11.199 I/YapRuntimeDiag( 8932): [Socket] connect requested url=http://192.168.5.185:8080
+06-28 18:44:11.216 I/YapRuntimeDiag( 8932): [Lifecycle] MainActivity.onResume
+06-28 18:44:11.223 I/YapRuntimeDiag( 8932): [Socket] connect requested url=http://192.168.5.185:8080
+06-28 18:44:11.405 I/YapRuntimeDiag( 8932): [Socket] reconnect attempt=1 backoffMs=30000
+06-28 18:44:11.956 I/YapRuntimeDiag( 8932): [Socket] connected
+06-28 18:44:16.803 I/YapRuntimeDiag( 8932): [Lifecycle] MainActivity.onPause
+06-28 18:44:16.880 I/YapRuntimeDiag( 8932): [Lifecycle] MainActivity.onStop
+06-28 18:44:17.505 I/YapRuntimeDiag( 8932): [Lifecycle] ProcessLifecycle.onStop (foreground=false)
+06-28 18:44:20.532 I/YapRuntimeDiag( 8932): [Delivery] message:status conversationId=1 messageId=141 status=delivered userId=1
+06-28 18:44:21.890 I/YapRuntimeDiag( 8932): [Socket] disconnected reason=transport error
+06-28 18:44:21.893 I/YapRuntimeDiag( 8932): [Socket] reconnect attempt=1 backoffMs=1000
+06-28 18:44:32.947 I/YapRuntimeDiag( 8932): [Socket] reconnect attempt=2 backoffMs=2000
+06-28 18:44:44.997 I/YapRuntimeDiag( 8932): [Socket] reconnect attempt=3 backoffMs=4000
+06-28 18:44:59.046 I/YapRuntimeDiag( 8932): [Socket] reconnect attempt=4 backoffMs=8000

@@ -1,10 +1,8 @@
 package com.yapyap.core.realtime
 
+import com.yapyap.core.diagnostics.RuntimeDiagnostics
 import com.yapyap.core.push.PushMessageDeduplicator
-import com.yapyap.core.push.PushPlatform
-import com.yapyap.core.push.isAppInForeground
-import com.yapyap.core.push.model.LocalPushNotification
-import com.yapyap.core.push.model.PushNotificationChannel
+import com.yapyap.core.push.PushNotificationCoordinator
 import com.yapyap.feature.auth.domain.model.AuthState
 import com.yapyap.feature.auth.domain.usecase.ObserveAuthStateUseCase
 import com.yapyap.feature.chat.data.mapper.toDomain
@@ -25,9 +23,9 @@ class ChatRealtimeRepository(
     private val presenceStore: PresenceStore,
     private val observeAuthStateUseCase: ObserveAuthStateUseCase,
     private val activeConversationTracker: ActiveConversationTracker,
-    private val incomingMessageNotifier: IncomingMessageNotifier,
     private val deduplicator: PushMessageDeduplicator,
-    private val pushPlatform: PushPlatform,
+    private val pushNotificationCoordinator: Lazy<PushNotificationCoordinator>,
+    private val deliveryAckService: MessageDeliveryAcknowledgementGateway,
 ) {
     private var currentUserId: Int? = null
     private var appScope: CoroutineScope? = null
@@ -61,18 +59,41 @@ class ChatRealtimeRepository(
 
     private suspend fun handleMessageNew(event: SocketEvent.MessageNew) {
         val message = event.message.toDomain()
-        val messageId = message.id?.toString()
-        val alreadyHandled = messageId != null && deduplicator.hasSeen(messageId)
+        val messageId = message.id
+        val alreadyHandled = messageId != null && deduplicator.hasSeen(messageId.toString())
         if (messageId != null) {
-            deduplicator.markSeen(messageId)
+            deduplicator.markSeen(messageId.toString())
         }
+
+        val resolvedUserId = (observeAuthStateUseCase().value as? AuthState.Authenticated)?.user?.id
+        val isFromOther = resolvedUserId != null && message.senderId != resolvedUserId
+        if (isFromOther && messageId != null) {
+            deliveryAckService.onMessageReceived(
+                source = "socket",
+                conversationId = event.conversationId,
+                messageId = messageId,
+                senderId = message.senderId,
+                trigger = "ChatRealtimeRepository.handleMessageNew",
+            )
+        }
+
         chatRepository.upsertIncomingMessage(message)
+
+        if (isFromOther && messageId != null) {
+            deliveryAckService.onMessagePersisted(
+                source = "socket",
+                conversationId = event.conversationId,
+                messageId = messageId,
+                senderId = message.senderId,
+                trigger = "ChatRealtimeRepository.handleMessageNew",
+            )
+        }
 
         val isViewing = activeConversationTracker.isViewing(event.conversationId)
         val wasUnknown = conversationRepository.applyIncomingMessage(
             conversationId = event.conversationId,
             message = message,
-            currentUserId = currentUserId,
+            currentUserId = resolvedUserId,
             isViewingConversation = isViewing,
         )
 
@@ -82,7 +103,6 @@ class ChatRealtimeRepository(
             }
         }
 
-        val isFromOther = currentUserId != null && message.senderId != currentUserId
         if (isFromOther && isViewing) {
             message.id?.let { messageId ->
                 appScope?.launch {
@@ -91,36 +111,27 @@ class ChatRealtimeRepository(
                 }
             }
         }
-        if (isFromOther && !activeConversationTracker.isViewing(event.conversationId) && !alreadyHandled) {
-            val preview = message.previewText()
-            if (!isAppInForeground()) {
-                val notificationData = buildMap {
-                    put("type", "new_message")
-                    put("conversationId", event.conversationId.toString())
-                    put("senderId", message.senderId.toString())
-                    message.id?.let { put("messageId", it.toString()) }
-                    put("preview", preview)
-                }
-                pushPlatform.showLocalNotification(
-                    LocalPushNotification(
-                        title = "New message",
-                        body = preview,
-                        channel = PushNotificationChannel.Messages,
-                        data = notificationData,
-                    ),
-                )
-            } else {
-                incomingMessageNotifier.notify(
-                    IncomingMessageNotification(
-                        conversationId = event.conversationId,
-                        preview = preview,
-                    ),
-                )
-            }
+        if (isFromOther && !alreadyHandled) {
+            RuntimeDiagnostics.event(
+                "Realtime",
+                "socket message:new conversationId=${event.conversationId} messageId=$messageId " +
+                    "senderId=${message.senderId} isViewing=$isViewing",
+            )
+            pushNotificationCoordinator.value.onRealtimeNewMessage(
+                conversationId = event.conversationId,
+                messageId = messageId?.toString(),
+                senderId = message.senderId,
+                preview = message.previewText(),
+            )
         }
     }
 
     private suspend fun handleMessageStatus(event: SocketEvent.MessageStatus) {
+        RuntimeDiagnostics.event(
+            "Delivery",
+            "message:status conversationId=${event.conversationId} messageId=${event.messageId} " +
+                "status=${event.status} userId=${event.userId}",
+        )
         chatRepository.applyMessageStatus(
             conversationId = event.conversationId,
             messageId = event.messageId,

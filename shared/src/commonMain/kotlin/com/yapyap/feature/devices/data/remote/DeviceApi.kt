@@ -18,7 +18,7 @@ import io.ktor.http.isSuccess
 class DeviceApi(
     private val httpClient: HttpClient,
 ) {
-    suspend fun registerDevice(request: RegisterDeviceRequestDto): ApiResult<Unit> {
+    suspend fun registerDevice(request: RegisterDeviceRequestDto): ApiResult<Int> {
         return safeApiCall {
             val response = httpClient.post("/api/devices/register") {
                 setBody(request)
@@ -27,7 +27,7 @@ class DeviceApi(
             if (!response.status.isSuccess()) {
                 throw apiError(response.status.value, apiResponse)
             }
-            apiResponse.requireData(response.status.value)
+            apiResponse.requireData(response.status.value).device.id
         }
     }
 

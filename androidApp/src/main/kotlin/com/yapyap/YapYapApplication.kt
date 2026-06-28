@@ -3,6 +3,7 @@ package com.yapyap
 import android.app.Application
 import com.google.firebase.FirebaseApp
 import com.yapyap.core.push.PushNotificationChannels
+import com.yapyap.core.push.bootstrapAndroidPush
 import com.yapyap.core.push.registerYapAppLifecycleCallbacks
 import org.koin.android.ext.koin.androidContext
 import com.yapyap.core.di.initKoin
@@ -17,6 +18,7 @@ class YapYapApplication : Application() {
             FirebaseApp.initializeApp(this)
         }
         PushNotificationChannels.create(this)
+        bootstrapAndroidPush()
         registerYapAppLifecycleCallbacks()
     }
 }

@@ -6,6 +6,7 @@ import com.yapyap.feature.conversations.data.dto.ConversationListItemDto
 import com.yapyap.feature.conversations.data.dto.ConversationsListDataDto
 import com.yapyap.feature.conversations.data.dto.LastMessageDto
 import com.yapyap.feature.conversations.data.remote.ConversationApi
+import com.yapyap.core.realtime.NoopMessageDeliveryAcknowledgementGateway
 import com.yapyap.feature.conversations.data.repository.ConversationRepositoryImpl
 import com.yapyap.feature.conversations.domain.entity.LastMessage
 import io.ktor.client.HttpClient
@@ -51,7 +52,7 @@ class GetConversationsUseCaseTest {
         )
 
         val api = ConversationApi(createMockClient(listOf(directChatDto, groupChatDto)))
-        val repository = ConversationRepositoryImpl(api)
+        val repository = ConversationRepositoryImpl(api, NoopMessageDeliveryAcknowledgementGateway)
         val useCase = GetConversationsUseCase(repository)
 
         val refreshResult = useCase.refresh()

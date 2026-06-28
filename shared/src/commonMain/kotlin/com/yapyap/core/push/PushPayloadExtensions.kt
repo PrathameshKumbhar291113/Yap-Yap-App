@@ -11,16 +11,17 @@ fun PushPayload.toIncomingMessage(): Message? {
     val parsedMessageId = messageId?.toIntOrNull() ?: return null
     val parsedSenderId = senderId?.toIntOrNull() ?: return null
     val type = MessageType.fromApi(messageType ?: "text")
+    val resolvedMediaUrl = mediaUrl ?: raw["mediaUrl"] ?: raw["media_url"]
     return Message(
         id = parsedMessageId,
         conversationId = parsedConversationId,
         senderId = parsedSenderId,
         content = preview,
         messageType = type,
-        mediaUrl = null,
+        mediaUrl = resolvedMediaUrl,
         status = MessageStatus.SENT,
         clientMessageId = null,
-        createdAt = currentTimestampIso(),
+        createdAt = createdAt?.takeIf { it.isNotBlank() } ?: currentTimestampIso(),
         isPending = false,
     )
 }

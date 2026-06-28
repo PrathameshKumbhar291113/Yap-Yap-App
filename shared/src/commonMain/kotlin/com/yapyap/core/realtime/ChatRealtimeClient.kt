@@ -10,6 +10,8 @@ interface ChatRealtimeClient {
 
     val isReady: Boolean
 
+    fun connectionDiagnostics(): SocketConnectionDiagnostics
+
     fun connect(accessToken: String)
 
     fun disconnect()
@@ -23,4 +25,6 @@ interface ChatRealtimeClient {
     fun emitTypingStop(conversationId: Int)
 
     suspend fun markRead(conversationId: Int, messageId: Int?): Result<Unit>
+
+    suspend fun markDelivered(conversationId: Int, messageId: Int): Result<Unit>
 }

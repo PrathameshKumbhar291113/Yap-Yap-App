@@ -2,6 +2,7 @@ package com.yapyap.feature.chat.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.yapyap.core.push.PushNotificationCoordinator
 import com.yapyap.core.realtime.ActiveConversationTracker
 import com.yapyap.core.realtime.ChatRealtimeClient
 import com.yapyap.feature.auth.domain.model.AuthState
@@ -37,6 +38,7 @@ class ChatViewModel(
     private val observeTypingStateUseCase: ObserveTypingStateUseCase,
     private val chatRealtimeClient: ChatRealtimeClient,
     private val activeConversationTracker: ActiveConversationTracker,
+    private val pushNotificationCoordinator: PushNotificationCoordinator,
 ) : ViewModel() {
     private val isInitialLoading = MutableStateFlow(true)
     private val initialError = MutableStateFlow<String?>(null)
@@ -100,6 +102,7 @@ class ChatViewModel(
 
     init {
         activeConversationTracker.setActiveConversationId(conversationId)
+        pushNotificationCoordinator.onConversationOpened(conversationId)
         refreshLatest()
     }
 

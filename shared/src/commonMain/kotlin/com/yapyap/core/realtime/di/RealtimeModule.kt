@@ -4,6 +4,8 @@ import com.yapyap.core.realtime.ActiveConversationTracker
 import com.yapyap.core.realtime.ChatRealtimeClient
 import com.yapyap.core.realtime.ChatRealtimeRepository
 import com.yapyap.core.realtime.IncomingMessageNotifier
+import com.yapyap.core.realtime.MessageDeliveryAcknowledgementGateway
+import com.yapyap.core.realtime.MessageDeliveryAcknowledgementService
 import com.yapyap.core.realtime.PresenceStore
 import com.yapyap.core.realtime.RealtimeCoordinator
 import com.yapyap.core.realtime.SocketEventParser
@@ -18,6 +20,13 @@ val realtimeModule = module {
     single { PresenceStore() }
     single { ActiveConversationTracker() }
     single { IncomingMessageNotifier() }
+    single<MessageDeliveryAcknowledgementGateway> {
+        MessageDeliveryAcknowledgementService(
+            chatRealtimeClient = get(),
+            observeAuthStateUseCase = get(),
+            dispatcherProvider = get(),
+        )
+    }
     single<ChatRealtimeClient> {
         createChatRealtimeClient(
             socketEventParser = get(),
@@ -34,9 +43,9 @@ val realtimeModule = module {
             presenceStore = get(),
             observeAuthStateUseCase = get(),
             activeConversationTracker = get(),
-            incomingMessageNotifier = get(),
             deduplicator = get(),
-            pushPlatform = get(),
+            pushNotificationCoordinator = lazy { get() },
+            deliveryAckService = get(),
         )
     }
     single {
@@ -45,6 +54,8 @@ val realtimeModule = module {
             tokenStorage = get(),
             chatRealtimeClient = get(),
             chatRealtimeRepository = get(),
+            conversationRepository = get(),
+            deliveryAckService = get(),
             sessionEvents = get(),
             tokenRefreshNotifier = get(),
             dispatcherProvider = get(),

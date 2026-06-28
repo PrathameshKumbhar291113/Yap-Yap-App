@@ -11,7 +11,7 @@ import org.koin.dsl.module
 
 val conversationsModule = module {
     single { ConversationApi(get()) }
-    single<ConversationRepository> { ConversationRepositoryImpl(get()) }
+    single<ConversationRepository> { ConversationRepositoryImpl(get(), get()) }
     factory { GetConversationsUseCase(get()) }
     factory { StartDirectChatUseCase(get()) }
     viewModel { ConversationsViewModel(get(), get()) }

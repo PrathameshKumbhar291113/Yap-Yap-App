@@ -3,29 +3,25 @@ import Shared
 import UserNotifications
 import UIKit
 
-#if canImport(FirebaseCore)
 import FirebaseCore
-#endif
-#if canImport(FirebaseMessaging)
 import FirebaseMessaging
-#endif
 
 final class YapPushManager: NSObject {
     static let shared = YapPushManager()
+
+    private func diag(_ component: String, _ message: String) {
+        print("[YapRuntimeDiag] [\(component)] \(message)")
+    }
 
     private override init() {
         super.init()
     }
 
     func configure() {
-        #if canImport(FirebaseCore)
         if FirebaseApp.app() == nil {
             FirebaseApp.configure()
         }
-        #endif
-        #if canImport(FirebaseMessaging)
         Messaging.messaging().delegate = self
-        #endif
         UNUserNotificationCenter.current().delegate = self
     }
 
@@ -39,8 +35,17 @@ final class YapPushManager: NSObject {
         IosPushBridge.shared.registerDeleteTokenHandler { [weak self] in
             self?.deleteToken()
         }
-        IosPushBridge.shared.registerShowNotificationHandler { title, body, payloadJson in
-            YapPushManager.shared.showLocalNotification(title: title, body: body, payloadJson: payloadJson)
+        IosPushBridge.shared.registerShowNotificationHandler { title, body, payloadJson, threadId, identifier in
+            YapPushManager.shared.showLocalNotification(
+                title: title,
+                body: body,
+                payloadJson: payloadJson,
+                threadId: threadId,
+                identifier: identifier
+            )
+        }
+        IosPushBridge.shared.registerDismissNotificationHandler { threadId in
+            YapPushManager.shared.dismissNotifications(forThreadId: threadId)
         }
     }
 
@@ -51,9 +56,27 @@ final class YapPushManager: NSObject {
     }
 
     func handleDeviceToken(_ deviceToken: Data) {
-        #if canImport(FirebaseMessaging)
+        diag("Firebase", "handleDeviceToken apnsBytes=\(deviceToken.count)")
         Messaging.messaging().apnsToken = deviceToken
-        #endif
+        fetchToken()
+    }
+
+    func handleRemoteNotification(userInfo: [AnyHashable: Any]) {
+        let normalized = normalizeUserInfo(userInfo)
+        diag(
+            "RemoteNotification",
+            "handleRemoteNotification normalizedKeys=\(normalized.keys.sorted()) conversationId=\(normalized["conversationId"] ?? "nil")"
+        )
+        guard !normalized.isEmpty else { return }
+        let osHandled = hasVisibleAlert(userInfo)
+        deliverInboundMessage(data: normalized, osNotificationHandled: osHandled)
+        Messaging.messaging().appDidReceiveMessage(userInfo)
+    }
+
+    func handleLaunchNotification(userInfo: [AnyHashable: Any]) {
+        let normalized = normalizeUserInfo(userInfo)
+        guard !normalized.isEmpty else { return }
+        IosPushBridge.shared.deliverNotificationOpened(data: normalized)
     }
 
     private func requestPermission() {
@@ -66,22 +89,58 @@ final class YapPushManager: NSObject {
     }
 
     private func fetchToken() {
-        #if canImport(FirebaseMessaging)
         Messaging.messaging().token { token, _ in
             IosPushBridge.shared.deliverToken(token: token)
         }
-        #else
-        IosPushBridge.shared.deliverToken(token: nil)
-        #endif
     }
 
     private func deleteToken() {
-        #if canImport(FirebaseMessaging)
         Messaging.messaging().deleteToken { _ in }
-        #endif
     }
 
-    private func showLocalNotification(title: String, body: String, payloadJson: String) {
+    func dismissNotifications(forThreadId threadId: String) {
+        diag("Notification", "dismissNotifications threadId=\(threadId)")
+        let center = UNUserNotificationCenter.current()
+        center.getDeliveredNotifications { notifications in
+            let identifiers = notifications.compactMap { notification -> String? in
+                let content = notification.request.content
+                if content.threadIdentifier == threadId {
+                    return notification.request.identifier
+                }
+                if notification.request.identifier == threadId {
+                    return notification.request.identifier
+                }
+                if let conversationId = content.userInfo["conversationId"] as? String,
+                   threadId == "conv_\(conversationId)" {
+                    return notification.request.identifier
+                }
+                return nil
+            }
+            guard !identifiers.isEmpty else { return }
+            center.removeDeliveredNotifications(withIdentifiers: identifiers)
+        }
+        center.getPendingNotificationRequests { requests in
+            let identifiers = requests.compactMap { request -> String? in
+                if request.content.threadIdentifier == threadId {
+                    return request.identifier
+                }
+                if request.identifier == threadId {
+                    return request.identifier
+                }
+                return nil
+            }
+            guard !identifiers.isEmpty else { return }
+            center.removePendingNotificationRequests(withIdentifiers: identifiers)
+        }
+    }
+
+    private func showLocalNotification(
+        title: String,
+        body: String,
+        payloadJson: String,
+        threadId: String?,
+        identifier: String?
+    ) {
         UNUserNotificationCenter.current().getNotificationSettings { settings in
             let allowed: Bool
             switch settings.authorizationStatus {
@@ -96,12 +155,20 @@ final class YapPushManager: NSObject {
             content.title = title
             content.body = body
             content.sound = .default
+            if let threadId, !threadId.isEmpty {
+                content.threadIdentifier = threadId
+            }
             if let data = payloadJson.data(using: .utf8),
                let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 content.userInfo = object
             }
+            let requestId = identifier ?? UUID().uuidString
+            self.diag(
+                "Notification",
+                "UNUserNotificationCenter.add requestId=\(requestId) threadId=\(threadId ?? "nil") title=\(title)"
+            )
             let request = UNNotificationRequest(
-                identifier: UUID().uuidString,
+                identifier: requestId,
                 content: content,
                 trigger: nil
             )
@@ -111,26 +178,60 @@ final class YapPushManager: NSObject {
         }
     }
 
-    fileprivate func deliverDataDictionary(_ data: [AnyHashable: Any]) {
+    private func deliverInboundMessage(data: [String: String], osNotificationHandled: Bool) {
+        let mode: PushDeliveryMode = osNotificationHandled ? .hybrid : .dataonly
+        let delivery = PushDeliveryContext(mode: mode, osNotificationHandled: osNotificationHandled)
+        let message = PushInboundMessage(data: data, delivery: delivery)
+        IosPushBridge.shared.deliverMessage(message: message)
+    }
+
+    private func hasVisibleAlert(_ userInfo: [AnyHashable: Any]) -> Bool {
+        guard let aps = userInfo["aps"] as? [String: Any] else { return false }
+        if aps["alert"] != nil { return true }
+        return false
+    }
+
+    fileprivate func normalizeUserInfo(_ data: [AnyHashable: Any]) -> [String: String] {
         var normalized: [String: String] = [:]
         for (key, value) in data {
-            if let key = key as? String {
+            if let key = key as? String,
+               !key.hasPrefix("google."),
+               !key.hasPrefix("gcm."),
+               key != "aps" {
                 normalized[key] = "\(value)"
             }
         }
-        guard !normalized.isEmpty else { return }
-        IosPushBridge.shared.deliverMessage(data: normalized)
+        if let aps = data["aps"] as? [String: Any],
+           let alert = aps["alert"] as? [String: Any] {
+            if let title = alert["title"] as? String, normalized["senderName"] == nil {
+                normalized["senderName"] = title
+            }
+            if let body = alert["body"] as? String, normalized["preview"] == nil {
+                normalized["preview"] = body
+            }
+            if normalized["type"] == nil {
+                normalized["type"] = "new_message"
+            }
+        } else if let aps = data["aps"] as? [String: Any],
+                  let alert = aps["alert"] as? String {
+            if normalized["preview"] == nil {
+                normalized["preview"] = alert
+            }
+            if normalized["type"] == nil {
+                normalized["type"] = "new_message"
+            }
+        }
+        return normalized
     }
 }
 
-#if canImport(FirebaseMessaging)
 extension YapPushManager: MessagingDelegate {
     func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
         guard let token = fcmToken else { return }
+        diag("Firebase", "didReceiveRegistrationToken prefix=\(String(token.prefix(12)))...")
         IosPushBridge.shared.deliverTokenRefresh(token: token)
     }
 }
-#endif
 
 extension YapPushManager: UNUserNotificationCenterDelegate {
     func userNotificationCenter(
@@ -138,8 +239,19 @@ extension YapPushManager: UNUserNotificationCenterDelegate {
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
-        deliverDataDictionary(notification.request.content.userInfo)
-        completionHandler([])
+        let userInfo = notification.request.content.userInfo
+        diag(
+            "RemoteNotification",
+            "willPresent id=\(notification.request.identifier) threadId=\(notification.request.content.threadIdentifier) keys=\(userInfo.keys)"
+        )
+        let normalized = normalizeUserInfo(userInfo)
+        // OS presents the banner — sync data only; coordinator must not create a duplicate local notification.
+        deliverInboundMessage(data: normalized, osNotificationHandled: true)
+        if #available(iOS 14.0, *) {
+            completionHandler([.banner, .sound, .badge])
+        } else {
+            completionHandler([.alert, .sound, .badge])
+        }
     }
 
     func userNotificationCenter(
@@ -147,12 +259,11 @@ extension YapPushManager: UNUserNotificationCenterDelegate {
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        var normalized: [String: String] = [:]
-        for (key, value) in response.notification.request.content.userInfo {
-            if let key = key as? String {
-                normalized[key] = "\(value)"
-            }
-        }
+        diag(
+            "RemoteNotification",
+            "didReceive response id=\(response.notification.request.identifier) threadId=\(response.notification.request.content.threadIdentifier)"
+        )
+        let normalized = normalizeUserInfo(response.notification.request.content.userInfo)
         IosPushBridge.shared.deliverNotificationOpened(data: normalized)
         completionHandler()
     }

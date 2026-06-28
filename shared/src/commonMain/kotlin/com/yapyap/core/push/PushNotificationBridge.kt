@@ -1,24 +1,31 @@
 package com.yapyap.core.push
 
+import com.yapyap.core.push.model.PushInboundMessage
+
 /**
  * Bridge between platform push layers (FCM service, iOS AppDelegate) and [PushNotificationCoordinator].
  */
 object PushNotificationBridge {
-    var onMessage: ((Map<String, String>) -> Unit)? = null
+    var onMessage: ((PushInboundMessage) -> Unit)? = null
     var onTokenRefresh: ((String) -> Unit)? = null
     var onNotificationOpened: ((Map<String, String>) -> Unit)? = null
 
     private var pendingToken: String? = null
-    private var pendingMessage: Map<String, String>? = null
+    private var pendingMessage: PushInboundMessage? = null
     private var pendingNotificationOpen: Map<String, String>? = null
 
-    fun deliverMessage(data: Map<String, String>) {
+    fun deliverMessage(message: PushInboundMessage) {
         val handler = onMessage
         if (handler != null) {
-            handler(data)
+            handler(message)
         } else {
-            pendingMessage = data
+            pendingMessage = message
         }
+    }
+
+    /** Legacy entry — treated as data-only delivery. */
+    fun deliverMessage(data: Map<String, String>) {
+        deliverMessage(PushInboundMessage(data = data))
     }
 
     fun deliverTokenRefresh(token: String) {
@@ -44,9 +51,9 @@ object PushNotificationBridge {
             pendingToken = null
             onTokenRefresh?.invoke(token)
         }
-        pendingMessage?.let { data ->
+        pendingMessage?.let { message ->
             pendingMessage = null
-            onMessage?.invoke(data)
+            onMessage?.invoke(message)
         }
         pendingNotificationOpen?.let { data ->
             pendingNotificationOpen = null

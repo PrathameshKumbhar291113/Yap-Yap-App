@@ -1,7 +1,9 @@
 package com.yapyap.feature.chat.data.repository
 
+import com.yapyap.core.realtime.NoopMessageDeliveryAcknowledgementGateway
 import com.yapyap.core.realtime.ChatRealtimeClient
 import com.yapyap.core.realtime.RealtimeConnectionState
+import com.yapyap.core.realtime.SocketConnectionDiagnostics
 import com.yapyap.core.realtime.SocketEvent
 import com.yapyap.feature.chat.data.dto.MessageDto
 import com.yapyap.feature.chat.data.remote.ChatApi
@@ -126,6 +128,7 @@ class ChatRepositoryMessageStatusTest {
         return ChatRepositoryImpl(
             chatApi = ChatApi(httpClient),
             chatRealtimeClient = NoopChatRealtimeClient,
+            deliveryAckService = NoopMessageDeliveryAcknowledgementGateway,
         )
     }
 
@@ -136,6 +139,13 @@ class ChatRepositoryMessageStatusTest {
         override val events = MutableSharedFlow<SocketEvent>(extraBufferCapacity = 1)
         override val isReady = false
 
+        override fun connectionDiagnostics() = SocketConnectionDiagnostics(
+            connected = false,
+            authenticated = false,
+            socketId = null,
+            userId = null,
+        )
+
         override fun connect(accessToken: String) = Unit
         override fun disconnect() = Unit
         override fun refreshAccessToken(accessToken: String) = Unit
@@ -144,6 +154,9 @@ class ChatRepositoryMessageStatusTest {
         override fun emitTypingStart(conversationId: Int) = Unit
         override fun emitTypingStop(conversationId: Int) = Unit
         override suspend fun markRead(conversationId: Int, messageId: Int?): Result<Unit> =
+            Result.failure(IllegalStateException("not connected"))
+
+        override suspend fun markDelivered(conversationId: Int, messageId: Int): Result<Unit> =
             Result.failure(IllegalStateException("not connected"))
     }
 

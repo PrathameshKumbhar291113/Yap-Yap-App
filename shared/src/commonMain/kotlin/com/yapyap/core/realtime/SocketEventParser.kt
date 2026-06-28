@@ -80,6 +80,7 @@ class SocketEventParser(
         is SocketSendMessagePayload -> json.encodeToString(value)
         is SocketConversationPayload -> json.encodeToString(value)
         is SocketMessageReadPayload -> json.encodeToString(value)
+        is SocketMessageDeliveredPayload -> json.encodeToString(value)
         else -> error("Unsupported socket payload type: ${value::class.simpleName}")
     }
 }

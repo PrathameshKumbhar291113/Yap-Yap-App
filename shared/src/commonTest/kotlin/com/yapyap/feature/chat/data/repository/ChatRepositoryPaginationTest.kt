@@ -2,8 +2,10 @@ package com.yapyap.feature.chat.data.repository
 
 import com.yapyap.core.network.ApiResponse
 import com.yapyap.core.network.appJson
+import com.yapyap.core.realtime.NoopMessageDeliveryAcknowledgementGateway
 import com.yapyap.core.realtime.ChatRealtimeClient
 import com.yapyap.core.realtime.RealtimeConnectionState
+import com.yapyap.core.realtime.SocketConnectionDiagnostics
 import com.yapyap.core.realtime.SocketEvent
 import com.yapyap.core.realtime.SocketSendMessagePayload
 import com.yapyap.feature.chat.data.dto.MessageDto
@@ -128,6 +130,7 @@ class ChatRepositoryPaginationTest {
         return ChatRepositoryImpl(
             chatApi = ChatApi(httpClient),
             chatRealtimeClient = FakeChatRealtimeClient(),
+            deliveryAckService = NoopMessageDeliveryAcknowledgementGateway,
         )
     }
 
@@ -163,6 +166,13 @@ class ChatRepositoryPaginationTest {
         override val events: SharedFlow<SocketEvent> = MutableSharedFlow(replay = 0, extraBufferCapacity = 1)
         override val isReady: Boolean = false
 
+        override fun connectionDiagnostics() = SocketConnectionDiagnostics(
+            connected = false,
+            authenticated = false,
+            socketId = null,
+            userId = null,
+        )
+
         override fun connect(accessToken: String) = Unit
         override fun disconnect() = Unit
         override fun refreshAccessToken(accessToken: String) = Unit
@@ -171,6 +181,7 @@ class ChatRepositoryPaginationTest {
         override fun emitTypingStart(conversationId: Int) = Unit
         override fun emitTypingStop(conversationId: Int) = Unit
         override suspend fun markRead(conversationId: Int, messageId: Int?) = Result.success(Unit)
+        override suspend fun markDelivered(conversationId: Int, messageId: Int) = Result.success(Unit)
     }
 
     private companion object {

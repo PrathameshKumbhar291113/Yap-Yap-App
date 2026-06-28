@@ -1,5 +1,6 @@
 package com.yapyap.feature.conversations.data.repository
 
+import com.yapyap.core.realtime.MessageDeliveryAcknowledgementGateway
 import com.yapyap.core.network.getOrThrow
 import com.yapyap.feature.chat.domain.entity.Message
 import com.yapyap.feature.chat.domain.entity.MessageType
@@ -14,6 +15,7 @@ import kotlinx.coroutines.flow.asStateFlow
 
 class ConversationRepositoryImpl(
     private val conversationApi: ConversationApi,
+    private val deliveryAckService: MessageDeliveryAcknowledgementGateway,
 ) : ConversationRepository {
     private val _conversations = MutableStateFlow<List<Conversation>>(emptyList())
 
@@ -22,7 +24,12 @@ class ConversationRepositoryImpl(
     override suspend fun refreshConversations(): Result<Unit> {
         return runCatching {
             val items = conversationApi.getConversations().getOrThrow()
-            _conversations.value = sortByLatest(items.map { it.toDomain() })
+            val conversations = sortByLatest(items.map { it.toDomain() })
+            _conversations.value = conversations
+            deliveryAckService.ackConversationSummaries(
+                conversations = conversations,
+                trigger = "ConversationRepositoryImpl.refreshConversations",
+            )
         }
     }
 

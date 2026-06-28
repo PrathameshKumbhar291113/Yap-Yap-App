@@ -1,9 +1,11 @@
 package com.yapyap.core.push
 
 import com.yapyap.core.push.model.LocalPushNotification
+import com.yapyap.core.push.model.PushDeliveryContext
+import com.yapyap.core.push.model.PushDeliveryMode
+import com.yapyap.core.push.model.PushInboundMessage
 import com.yapyap.core.push.model.PushPermissionStatus
 import com.yapyap.core.push.model.PushPlatformType
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 import platform.UIKit.UIDevice
@@ -12,7 +14,8 @@ object IosPushBridge {
     private var requestPermissionHandler: (() -> Unit)? = null
     private var getTokenHandler: (() -> Unit)? = null
     private var deleteTokenHandler: (() -> Unit)? = null
-    private var showNotificationHandler: ((String, String, String) -> Unit)? = null
+    private var showNotificationHandler: ((String, String, String, String?, String?) -> Unit)? = null
+    private var dismissNotificationHandler: ((String) -> Unit)? = null
 
     fun registerRequestPermissionHandler(handler: () -> Unit) {
         requestPermissionHandler = handler
@@ -26,8 +29,12 @@ object IosPushBridge {
         deleteTokenHandler = handler
     }
 
-    fun registerShowNotificationHandler(handler: (String, String, String) -> Unit) {
+    fun registerShowNotificationHandler(handler: (String, String, String, String?, String?) -> Unit) {
         showNotificationHandler = handler
+    }
+
+    fun registerDismissNotificationHandler(handler: (String) -> Unit) {
+        dismissNotificationHandler = handler
     }
 
     fun requestPermission() {
@@ -42,8 +49,18 @@ object IosPushBridge {
         deleteTokenHandler?.invoke()
     }
 
-    fun showNotification(title: String, body: String, payloadJson: String) {
-        showNotificationHandler?.invoke(title, body, payloadJson)
+    fun showNotification(
+        title: String,
+        body: String,
+        payloadJson: String,
+        threadId: String?,
+        notificationIdentifier: String?,
+    ) {
+        showNotificationHandler?.invoke(title, body, payloadJson, threadId, notificationIdentifier)
+    }
+
+    fun dismissNotification(identifier: String) {
+        dismissNotificationHandler?.invoke(identifier)
     }
 
     fun deliverPermissionResult(granted: Boolean) {
@@ -54,8 +71,8 @@ object IosPushBridge {
         IosPushPlatform.deliverToken(token)
     }
 
-    fun deliverMessage(data: Map<String, String>) {
-        PushNotificationBridge.deliverMessage(data)
+    fun deliverMessage(message: PushInboundMessage) {
+        PushNotificationBridge.deliverMessage(message)
     }
 
     fun deliverTokenRefresh(token: String) {
@@ -97,12 +114,23 @@ class IosPushPlatform : PushPlatform {
         ) { (key, value) ->
             """"$key":"${value.replace("\"", "\\\"")}""""
         }
-        IosPushBridge.showNotification(notification.title, notification.body, payloadJson)
+        val identifier = notification.tag ?: notification.conversationId?.let { "conv_$it" }
+        IosPushBridge.showNotification(
+            title = notification.title,
+            body = notification.body,
+            payloadJson = payloadJson,
+            threadId = notification.threadId,
+            notificationIdentifier = identifier,
+        )
+    }
+
+    override fun dismissConversationNotification(conversationId: String) {
+        IosPushBridge.dismissNotification("conv_$conversationId")
     }
 
     override fun setHandlers(handlers: PushPlatformHandlers) {
         this.handlers = handlers
-        PushNotificationBridge.onMessage = { data -> handlers.onMessage(data) }
+        PushNotificationBridge.onMessage = { message -> handlers.onMessage(message) }
         PushNotificationBridge.onTokenRefresh = { token -> handlers.onTokenRefresh(token) }
         PushNotificationBridge.onNotificationOpened = { data -> handlers.onNotificationOpened(data) }
         PushNotificationBridge.flushPendingHandlers()
@@ -115,6 +143,8 @@ class IosPushPlatform : PushPlatform {
     override suspend fun onAppForeground() {
         IosPushBridge.fetchToken()
     }
+
+    override fun usesInAppForegroundNotification(): Boolean = false
 
     companion object {
         private var instance: IosPushPlatform? = null

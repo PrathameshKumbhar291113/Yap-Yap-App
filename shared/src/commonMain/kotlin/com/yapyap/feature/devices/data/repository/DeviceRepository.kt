@@ -14,7 +14,7 @@ class DeviceRepository(
         platform: PushPlatformType,
         deviceName: String?,
         appVersion: String?,
-    ): Result<Unit> {
+    ): Result<Int> {
         return runCatching {
             deviceApi.registerDevice(
                 RegisterDeviceRequestDto(

@@ -13,6 +13,7 @@ import io.ktor.client.plugins.logging.Logging
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
+import com.yapyap.core.diagnostics.RuntimeDiagnostics
 import com.yapyap.core.util.YapLogger
 
 expect fun createHttpClientEngine(): HttpClientEngine
@@ -63,6 +64,14 @@ private fun HttpClientConfig<*>.applyCommonConfig(enableLogging: Boolean) {
             logger = object : io.ktor.client.plugins.logging.Logger {
                 override fun log(message: String) {
                     YapLogger.i(message, tag = "Ktor")
+                    if (
+                        message.startsWith("REQUEST:") ||
+                        message.startsWith("RESPONSE:") ||
+                        message.startsWith("METHOD:") ||
+                        message.startsWith("FROM:")
+                    ) {
+                        RuntimeDiagnostics.event("HTTP", message.trim())
+                    }
                 }
             }
         }

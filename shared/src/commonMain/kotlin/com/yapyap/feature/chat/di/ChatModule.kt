@@ -14,7 +14,7 @@ import org.koin.dsl.module
 
 val chatModule = module {
     single { ChatApi(get()) }
-    single<ChatRepository> { ChatRepositoryImpl(get(), get()) }
+    single<ChatRepository> { ChatRepositoryImpl(get(), get(), get()) }
     factory { ObserveChatUseCase(get()) }
     factory { ObserveTypingStateUseCase(get()) }
     factory { SendMessageUseCase(get()) }
@@ -32,6 +32,7 @@ val chatModule = module {
             observeTypingStateUseCase = get(),
             chatRealtimeClient = get(),
             activeConversationTracker = get(),
+            pushNotificationCoordinator = get(),
         )
     }
 }

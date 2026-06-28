@@ -6,6 +6,7 @@ object SocketConstants {
     const val MESSAGE_NEW = "message:new"
     const val MESSAGE_STATUS = "message:status"
     const val MESSAGE_READ = "message:read"
+    const val MESSAGE_DELIVERED = "message:delivered"
     const val TYPING_START = "typing:start"
     const val TYPING_STOP = "typing:stop"
     const val TYPING = "typing"

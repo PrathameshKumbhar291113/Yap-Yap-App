@@ -64,6 +64,7 @@ final class YapSocketManager {
 
         manager = socketManager
         socket = client
+        print("[YapRuntimeDiag] [Socket] connecting to \(baseUrl)")
         print("[SocketIO] connecting to \(baseUrl)")
         client.connect(withPayload: ["token": token])
     }
@@ -90,17 +91,20 @@ final class YapSocketManager {
 
     private func registerListeners(on client: SocketIOClient) {
         client.on(clientEvent: .connect) { [weak self] _, _ in
+            print("[YapRuntimeDiag] [Socket] connected")
             print("[SocketIO] connected")
             self?.deliverNative(event: SocketConstants.shared.NATIVE_CONNECT, payload: nil)
         }
 
         client.on(clientEvent: .disconnect) { [weak self] data, _ in
+            print("[YapRuntimeDiag] [Socket] disconnected data=\(data)")
             print("[SocketIO] disconnected: \(data)")
             self?.deliverNative(event: SocketConstants.shared.NATIVE_DISCONNECT, payload: nil)
         }
 
         client.on(clientEvent: .error) { [weak self] data, _ in
             let message = YapSocketJson.stringFromSocketData(data) ?? String(describing: data)
+            print("[YapRuntimeDiag] [Socket] connect_error message=\(message)")
             print("[SocketIO] connect_error: \(message)")
             self?.deliverNative(event: SocketConstants.shared.NATIVE_CONNECT_ERROR, payload: message)
         }

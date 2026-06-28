@@ -6,8 +6,9 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.content.ContextCompat
 import co.touchlab.kermit.Logger
+import com.yapyap.core.diagnostics.RuntimeDiagnostics
 import com.yapyap.core.push.model.LocalPushNotification
-import com.yapyap.core.push.model.PushNotificationChannel
+import com.yapyap.core.push.model.PushInboundMessage
 import com.yapyap.core.push.model.PushPermissionStatus
 import com.yapyap.core.push.model.PushPlatformType
 import com.google.firebase.messaging.FirebaseMessaging
@@ -35,7 +36,16 @@ class AndroidPushPlatform(
     override suspend fun getDeviceToken(): String? {
         return runCatching {
             FirebaseMessaging.getInstance().token.await()
+        }.onSuccess { token ->
+            RuntimeDiagnostics.event(
+                "Firebase",
+                "getDeviceToken() success tokenPrefix=${token.take(12)}... length=${token.length}",
+            )
         }.onFailure { error ->
+            RuntimeDiagnostics.event(
+                "Firebase",
+                "getDeviceToken() FAILED ${error.javaClass.simpleName}: ${error.message}",
+            )
             log.w(error) { "Failed to fetch FCM token" }
         }.getOrNull()
     }
@@ -44,9 +54,13 @@ class AndroidPushPlatform(
         PushNotificationDisplay.show(context, notification)
     }
 
+    override fun dismissConversationNotification(conversationId: String) {
+        PushNotificationDisplay.dismiss(context, conversationId)
+    }
+
     override fun setHandlers(handlers: PushPlatformHandlers) {
         this.handlers = handlers
-        PushNotificationBridge.onMessage = { data -> handlers.onMessage(data) }
+        PushNotificationBridge.onMessage = { message -> handlers.onMessage(message) }
         PushNotificationBridge.onTokenRefresh = { token -> handlers.onTokenRefresh(token) }
         PushNotificationBridge.onNotificationOpened = { data -> handlers.onNotificationOpened(data) }
         PushNotificationBridge.flushPendingHandlers()
@@ -58,8 +72,10 @@ class AndroidPushPlatform(
 
     override suspend fun onAppForeground() = Unit
 
-    internal fun deliverMessage(data: Map<String, String>) {
-        handlers?.onMessage?.invoke(data) ?: PushNotificationBridge.deliverMessage(data)
+    override fun usesInAppForegroundNotification(): Boolean = true
+
+    internal fun deliverMessage(message: PushInboundMessage) {
+        handlers?.onMessage?.invoke(message) ?: PushNotificationBridge.deliverMessage(message)
     }
 
     internal fun deliverTokenRefresh(token: String) {

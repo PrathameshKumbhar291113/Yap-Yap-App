@@ -1,24 +1,31 @@
 package com.yapyap.core.push
 
 import kotlin.time.Clock
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class PushMessageDeduplicator(
     private val maxEntries: Int = 200,
     private val ttlMillis: Long = 5 * 60 * 1000L,
 ) {
+    private val mutex = Mutex()
     private val seenMessageIds = LinkedHashMap<String, Long>()
 
-    fun markSeen(messageId: String?) {
+    suspend fun markSeen(messageId: String?) {
         if (messageId.isNullOrBlank()) return
-        pruneExpired()
-        seenMessageIds[messageId] = nowMillis()
-        trimIfNeeded()
+        mutex.withLock {
+            pruneExpired()
+            seenMessageIds[messageId] = nowMillis()
+            trimIfNeeded()
+        }
     }
 
-    fun hasSeen(messageId: String?): Boolean {
+    suspend fun hasSeen(messageId: String?): Boolean {
         if (messageId.isNullOrBlank()) return false
-        pruneExpired()
-        return seenMessageIds.containsKey(messageId)
+        return mutex.withLock {
+            pruneExpired()
+            seenMessageIds.containsKey(messageId)
+        }
     }
 
     private fun pruneExpired() {

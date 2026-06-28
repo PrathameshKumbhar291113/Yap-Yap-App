@@ -2,6 +2,7 @@ package com.yapyap.feature.chat.data.repository
 
 import com.yapyap.core.network.getOrThrow
 import com.yapyap.core.realtime.ChatRealtimeClient
+import com.yapyap.core.realtime.MessageDeliveryAcknowledgementGateway
 import com.yapyap.core.realtime.SocketSendMessagePayload
 import com.yapyap.feature.chat.data.dto.SendMessageRequestDto
 import com.yapyap.feature.chat.data.mapper.toDomain
@@ -21,6 +22,7 @@ import kotlinx.coroutines.sync.withLock
 class ChatRepositoryImpl(
     private val chatApi: ChatApi,
     private val chatRealtimeClient: ChatRealtimeClient,
+    private val deliveryAckService: MessageDeliveryAcknowledgementGateway,
 ) : ChatRepository {
     private data class ConversationCache(
         val messages: MutableStateFlow<List<Message>> = MutableStateFlow(emptyList()),
@@ -48,7 +50,36 @@ class ChatRepositoryImpl(
                 cache.nextCursor = page.nextCursor
                 cache.hasMore = page.nextCursor != null
                 cache.initialLoaded = true
+                ackSyncedIncomingMessages(
+                    conversationId = conversationId,
+                    messages = serverMessages,
+                    trigger = "ChatRepositoryImpl.loadLatestMessages",
+                )
             }
+        }
+    }
+
+    private suspend fun ackSyncedIncomingMessages(
+        conversationId: Int,
+        messages: List<Message>,
+        trigger: String,
+    ) {
+        messages.forEach { message ->
+            val messageId = message.id ?: return@forEach
+            deliveryAckService.onMessageReceived(
+                source = "sync",
+                conversationId = conversationId,
+                messageId = messageId,
+                senderId = message.senderId,
+                trigger = trigger,
+            )
+            deliveryAckService.onMessagePersisted(
+                source = "sync",
+                conversationId = conversationId,
+                messageId = messageId,
+                senderId = message.senderId,
+                trigger = trigger,
+            )
         }
     }
 

@@ -2,6 +2,7 @@ package com.yapyap.core.realtime
 
 import co.touchlab.kermit.Logger
 import com.yapyap.core.datastore.TokenStorage
+import com.yapyap.core.diagnostics.RuntimeDiagnostics
 import com.yapyap.core.network.Environment
 import com.yapyap.core.util.DispatcherProvider
 import com.yapyap.feature.chat.data.dto.MessageDto
@@ -48,6 +49,17 @@ class SocketChatRealtimeClient(
     override val isReady: Boolean
         get() = _connectionState.value is RealtimeConnectionState.Ready
 
+    override fun connectionDiagnostics(): SocketConnectionDiagnostics {
+        val currentSocket = socket
+        val readyState = _connectionState.value as? RealtimeConnectionState.Ready
+        return SocketConnectionDiagnostics(
+            connected = currentSocket?.connected() == true,
+            authenticated = readyState != null,
+            socketId = currentSocket?.id(),
+            userId = readyState?.userId,
+        )
+    }
+
     private var socket: Socket? = null
     private var reconnectJob: Job? = null
     private var shouldStayConnected = false
@@ -61,12 +73,14 @@ class SocketChatRealtimeClient(
         reconnectAttempt = 0
         reconnectJob?.cancel()
         log.d { "connect requested to ${Environment.SOCKET_URL}" }
+        RuntimeDiagnostics.event("Socket", "connect requested url=${Environment.SOCKET_URL}")
         reconnectJob = scope.launch {
             connectInternal(accessToken)
         }
     }
 
     override fun disconnect() {
+        RuntimeDiagnostics.event("Socket", "disconnect requested")
         shouldStayConnected = false
         reconnectJob?.cancel()
         reconnectJob = null
@@ -136,6 +150,67 @@ class SocketChatRealtimeClient(
         }
     }
 
+    override suspend fun markDelivered(conversationId: Int, messageId: Int): Result<Unit> {
+        val currentSocket = socket
+        val diagnostics = connectionDiagnostics()
+        if (!isReady || currentSocket == null || !currentSocket.connected()) {
+            RuntimeDiagnostics.event(
+                "DeliveryAck",
+                "MESSAGE_DELIVERY_ACK_SKIPPED reason=socket_not_ready conversationId=$conversationId " +
+                    "messageId=$messageId socketConnected=${diagnostics.connected} " +
+                    "socketAuthenticated=${diagnostics.authenticated} socketId=${diagnostics.socketId} " +
+                    "socketUserId=${diagnostics.userId}",
+            )
+            return Result.failure(IllegalStateException("Socket not connected"))
+        }
+
+        val payload = SocketMessageDeliveredPayload(
+            conversationId = conversationId,
+            messageId = messageId,
+        )
+        val jsonPayload = JSONObject(socketEventParser.encodePayload(payload))
+
+        RuntimeDiagnostics.event(
+            "DeliveryAck",
+            "MESSAGE_DELIVERY_ACK_EMIT event=$EVENT_MESSAGE_DELIVERED conversationId=$conversationId " +
+                "messageId=$messageId socketConnected=${diagnostics.connected} " +
+                "socketAuthenticated=${diagnostics.authenticated} socketId=${diagnostics.socketId} " +
+                "socketUserId=${diagnostics.userId} payload=$jsonPayload",
+        )
+
+        return suspendCancellableCoroutine { continuation ->
+            currentSocket.emit(EVENT_MESSAGE_DELIVERED, jsonPayload, io.socket.client.Ack { args ->
+                if (continuation.isCancelled) return@Ack
+                val raw = args.firstOrNull()?.toJsonString()
+                if (raw == null) {
+                    RuntimeDiagnostics.event(
+                        "DeliveryAck",
+                        "MESSAGE_DELIVERY_ACK_SKIPPED reason=empty_socket_ack conversationId=$conversationId " +
+                            "messageId=$messageId socketId=${diagnostics.socketId}",
+                    )
+                    continuation.resume(Result.failure(IllegalStateException("Empty socket ack")))
+                    return@Ack
+                }
+                val result = socketEventParser.parseAckSuccess(raw)
+                if (result.isSuccess) {
+                    RuntimeDiagnostics.event(
+                        "DeliveryAck",
+                        "MESSAGE_DELIVERY_ACK_SUCCESS conversationId=$conversationId messageId=$messageId " +
+                            "socketId=${diagnostics.socketId} ackResponse=$raw",
+                    )
+                } else {
+                    RuntimeDiagnostics.event(
+                        "DeliveryAck",
+                        "MESSAGE_DELIVERY_ACK_SKIPPED reason=ack_parse_failed conversationId=$conversationId " +
+                            "messageId=$messageId socketId=${diagnostics.socketId} ackResponse=$raw " +
+                            "error=${result.exceptionOrNull()?.message}",
+                    )
+                }
+                continuation.resume(result)
+            })
+        }
+    }
+
     private suspend fun connectInternal(accessToken: String) {
         connectMutex.withLock {
             teardownSocket()
@@ -160,6 +235,7 @@ class SocketChatRealtimeClient(
     private fun registerListeners(currentSocket: Socket) {
         currentSocket.on(Socket.EVENT_CONNECT) {
             log.d { "socket connected" }
+            RuntimeDiagnostics.event("Socket", "connected")
             _connectionState.value = RealtimeConnectionState.Connected
             backoffMs = INITIAL_BACKOFF_MS
             reconnectAttempt = 0
@@ -167,6 +243,7 @@ class SocketChatRealtimeClient(
 
         currentSocket.on(Socket.EVENT_DISCONNECT) { args ->
             log.w { "socket disconnected: ${args.firstOrNull()}" }
+            RuntimeDiagnostics.event("Socket", "disconnected reason=${args.firstOrNull()}")
             _connectionState.value = RealtimeConnectionState.Disconnected
             scheduleReconnect()
         }
@@ -232,6 +309,7 @@ class SocketChatRealtimeClient(
         reconnectJob?.cancel()
         reconnectJob = scope.launch {
             reconnectAttempt += 1
+            RuntimeDiagnostics.event("Socket", "reconnect attempt=$reconnectAttempt backoffMs=$backoffMs")
             _connectionState.value = RealtimeConnectionState.Reconnecting(reconnectAttempt)
             delay(backoffMs)
             backoffMs = min(backoffMs * 2, MAX_BACKOFF_MS)
@@ -263,6 +341,7 @@ class SocketChatRealtimeClient(
         const val EVENT_MESSAGE_NEW = "message:new"
         const val EVENT_MESSAGE_STATUS = "message:status"
         const val EVENT_MESSAGE_READ = "message:read"
+        const val EVENT_MESSAGE_DELIVERED = "message:delivered"
         const val EVENT_TYPING_START = "typing:start"
         const val EVENT_TYPING_STOP = "typing:stop"
         const val EVENT_TYPING = "typing"

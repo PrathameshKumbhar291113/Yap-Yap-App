@@ -55,3 +55,9 @@ data class SocketMessageReadPayload(
     val conversationId: Int,
     val messageId: Int? = null,
 )
+
+@Serializable
+data class SocketMessageDeliveredPayload(
+    val conversationId: Int,
+    val messageId: Int,
+)

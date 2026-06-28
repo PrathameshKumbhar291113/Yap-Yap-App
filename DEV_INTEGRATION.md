@@ -58,9 +58,17 @@ Build and run a **debug** build. Debug uses the local backend URLs from `gradle.
 |----------|------------------|------------------------|
 | **Android emulator** | `http://10.0.2.2:8080` | `http://10.0.2.2:8080` |
 | **iOS Simulator** | `http://localhost:8080` | `http://localhost:8080` |
-| **Physical device** | Set `yapyap.baseUrl=http://192.168.1.x:8080` in `local.properties` (both API + socket) |
+| **Physical Android / iPhone** (same Wi‑Fi as laptop) | `http://<laptop-lan-ip>:8080` | `http://<laptop-lan-ip>:8080` |
 
-Override order: `local.properties` (`yapyap.baseUrl` or per-platform keys) → `gradle.properties` → built-in defaults.
+Debug builds pick emulator/simulator vs physical URLs **at runtime**. Physical devices use your Mac’s LAN IP, auto-detected when Gradle builds the app. Override in `local.properties` if needed:
+
+```properties
+LAN_HOST=192.168.1.42
+# or full URL:
+# yapyap.baseUrl=http://192.168.1.42:8080
+```
+
+Override order for virtual URLs: `gradle.properties` → built-in defaults. For physical URLs: `yapyap.baseUrl` → `LAN_HOST` → auto-detect → fallback.
 
 **Release builds** always use **`https://yapyap-backend.onrender.com`** for both API and Socket.IO.
 

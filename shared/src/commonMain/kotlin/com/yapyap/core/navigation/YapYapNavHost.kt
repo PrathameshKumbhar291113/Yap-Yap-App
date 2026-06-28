@@ -70,6 +70,7 @@ fun YapYapNavHost(
 
     LaunchedEffect(pushNavigationRouter, chatRealtimeClient) {
         pushNavigationRouter.targets.collect { target ->
+            if (bootstrapState != BootstrapState.Authenticated) return@collect
             when (target) {
                 is PushNavigationTarget.Chat -> {
                     navController.navigate(Route.MAIN) {
