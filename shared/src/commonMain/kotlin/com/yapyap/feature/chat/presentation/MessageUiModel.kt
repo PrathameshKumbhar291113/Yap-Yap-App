@@ -8,7 +8,8 @@ import com.yapyap.core.util.isoToLocalDateKey
 import com.yapyap.feature.chat.domain.entity.MessageType
 
 enum class ReadReceiptVisual {
-    Pending,
+    Queued,
+    Sending,
     Sent,
     Delivered,
     Read,
@@ -31,6 +32,7 @@ sealed interface ChatListItem {
 
 data class MessageUiModel(
     val stableKey: String,
+    val clientMessageId: String?,
     val content: String,
     val isOutgoing: Boolean,
     val timestamp: String?,
@@ -42,6 +44,7 @@ data class MessageUiModel(
 
 fun Message.toUiModel(currentUserId: Int): MessageUiModel = MessageUiModel(
     stableKey = stableKey,
+    clientMessageId = clientMessageId,
     content = displayText(),
     isOutgoing = senderId == currentUserId,
     timestamp = formatMessageTime(createdAt),
@@ -88,10 +91,10 @@ private fun Message.displayText(): String = when {
 }
 
 private fun MessageStatus.toReadReceipt(): ReadReceiptVisual = when (this) {
-    MessageStatus.PENDING -> ReadReceiptVisual.Pending
+    MessageStatus.QUEUED -> ReadReceiptVisual.Queued
+    MessageStatus.SENDING -> ReadReceiptVisual.Sending
     MessageStatus.FAILED -> ReadReceiptVisual.Failed
     MessageStatus.SENT -> ReadReceiptVisual.Sent
     MessageStatus.DELIVERED -> ReadReceiptVisual.Delivered
     MessageStatus.READ -> ReadReceiptVisual.Read
 }
-

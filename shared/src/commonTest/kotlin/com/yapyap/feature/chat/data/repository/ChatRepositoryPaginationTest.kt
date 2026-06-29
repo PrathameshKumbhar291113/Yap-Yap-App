@@ -127,10 +127,9 @@ class ChatRepositoryPaginationTest {
                 json(appJson)
             }
         }
-        return ChatRepositoryImpl(
+        return createTestChatRepository(
             chatApi = ChatApi(httpClient),
             chatRealtimeClient = FakeChatRealtimeClient(),
-            deliveryAckService = NoopMessageDeliveryAcknowledgementGateway,
         )
     }
 

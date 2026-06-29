@@ -32,7 +32,7 @@ fun YapYapApp() {
         pushNotificationCoordinator.start(appScope)
     }
 
-    YapYapTheme(darkTheme = true) {
+    YapYapTheme {
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             contentWindowInsets = YapZeroWindowInsets,

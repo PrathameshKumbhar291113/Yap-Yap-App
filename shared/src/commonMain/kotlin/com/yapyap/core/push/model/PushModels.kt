@@ -51,6 +51,13 @@ sealed class PushNavigationTarget {
     data class IncomingCall(val callSessionId: String) : PushNavigationTarget()
 }
 
+data class ConversationNotificationMessage(
+    val messageId: String?,
+    val senderName: String,
+    val text: String,
+    val timestamp: Long,
+)
+
 data class LocalPushNotification(
     val title: String,
     val body: String,
@@ -65,6 +72,10 @@ data class LocalPushNotification(
     val imageUrl: String? = null,
     val threadId: String? = null,
     val isSummary: Boolean = false,
+    /** Stacked messages for MessagingStyle / iOS thread body. */
+    val messageHistory: List<ConversationNotificationMessage> = emptyList(),
+    /** Post Android group summary only when multiple conversations are active. */
+    val showGroupSummary: Boolean = false,
 )
 
 enum class PushNotificationChannel {

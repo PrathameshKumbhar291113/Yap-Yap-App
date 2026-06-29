@@ -3,9 +3,10 @@ package com.yapyap
 import androidx.compose.ui.window.ComposeUIViewController
 import com.yapyap.core.di.initKoin
 import com.yapyap.core.push.registerYapAppLifecycleCallbacks
+import platform.UIKit.UIViewController
 
-fun MainViewController() = ComposeUIViewController {
+fun MainViewController(): UIViewController {
     initKoin()
     registerYapAppLifecycleCallbacks()
-    YapYapApp()
+    return ComposeUIViewController { YapYapApp() }
 }

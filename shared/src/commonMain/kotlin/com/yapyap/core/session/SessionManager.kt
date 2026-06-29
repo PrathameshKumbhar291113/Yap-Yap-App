@@ -1,5 +1,7 @@
 package com.yapyap.core.session
 
+import com.yapyap.core.diagnostics.OutboxPipelineTrace
+import com.yapyap.core.diagnostics.ReceiverSyncTrace
 import com.yapyap.core.datastore.TokenStorage
 import com.yapyap.core.network.SessionEventPublisher
 import com.yapyap.core.network.Environment
@@ -32,7 +34,7 @@ class SessionManager(
     private val tokenStorage: TokenStorage,
     private val sessionEvents: SessionEventPublisher,
     private val chatRealtimeClient: ChatRealtimeClient,
-    private val realtimeCoordinator: RealtimeCoordinator,
+    private val realtimeCoordinator: Lazy<RealtimeCoordinator>,
     dispatcherProvider: DispatcherProvider,
 ) {
     private val scope = CoroutineScope(dispatcherProvider.default)
@@ -57,7 +59,7 @@ class SessionManager(
         get() = !tokenStorage.getAccessToken().isNullOrBlank()
 
     fun start(appScope: CoroutineScope) {
-        realtimeCoordinator.start(appScope)
+        realtimeCoordinator.value.start(appScope)
 
         scope.launch {
             sessionEvents.sessionExpired.collect {
@@ -77,6 +79,18 @@ class SessionManager(
             !token.isNullOrBlank() &&
             authRepository.authState.value is AuthState.Authenticated
         ) {
+            ReceiverSyncTrace.stage(
+                stage = "APP_FOREGROUND_RECONNECT",
+                trigger = "SessionManager.onAppForeground",
+                extra = mapOf(
+                    "repairAction" to "socket_connect_only",
+                    "note" to "no_message_sync_here",
+                ),
+            )
+            OutboxPipelineTrace.stage(
+                stage = "RECONNECT_AFTER_SEND",
+                extra = mapOf("trigger" to "app_foreground_connect"),
+            )
             chatRealtimeClient.connect(token)
         }
     }

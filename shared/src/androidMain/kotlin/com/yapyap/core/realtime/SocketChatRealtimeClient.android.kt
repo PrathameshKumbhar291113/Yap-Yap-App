@@ -2,7 +2,11 @@ package com.yapyap.core.realtime
 
 import co.touchlab.kermit.Logger
 import com.yapyap.core.datastore.TokenStorage
+import com.yapyap.core.diagnostics.OutboxPipelineTrace
+import com.yapyap.core.diagnostics.RealtimeTransportClock
+import com.yapyap.core.diagnostics.ReceiverSyncTrace
 import com.yapyap.core.diagnostics.RuntimeDiagnostics
+import com.yapyap.core.diagnostics.SocketRoomTrace
 import com.yapyap.core.network.Environment
 import com.yapyap.core.util.DispatcherProvider
 import com.yapyap.feature.chat.data.dto.MessageDto
@@ -73,6 +77,10 @@ class SocketChatRealtimeClient(
         reconnectAttempt = 0
         reconnectJob?.cancel()
         log.d { "connect requested to ${Environment.SOCKET_URL}" }
+        SocketRoomTrace.stage(
+            stage = "SOCKET_CONNECT_ATTEMPT",
+            extra = mapOf("url" to Environment.SOCKET_URL),
+        )
         RuntimeDiagnostics.event("Socket", "connect requested url=${Environment.SOCKET_URL}")
         reconnectJob = scope.launch {
             connectInternal(accessToken)
@@ -80,6 +88,13 @@ class SocketChatRealtimeClient(
     }
 
     override fun disconnect() {
+        SocketRoomTrace.stage(
+            stage = "SOCKET_DISCONNECT_REQUESTED",
+            extra = mapOf(
+                "socketId" to (socket?.id() ?: "null"),
+                "reason" to "client_disconnect",
+            ),
+        )
         RuntimeDiagnostics.event("Socket", "disconnect requested")
         shouldStayConnected = false
         reconnectJob?.cancel()
@@ -103,16 +118,43 @@ class SocketChatRealtimeClient(
             return Result.failure(IllegalStateException("Socket not connected"))
         }
 
+        OutboxPipelineTrace.stage(
+            stage = "SOCKET_SEND_BEGIN",
+            clientMessageId = payload.clientMessageId,
+            conversationId = payload.conversationId,
+            extra = mapOf(
+                "socketId" to (currentSocket.id() ?: "null"),
+                "connected" to currentSocket.connected().toString(),
+            ),
+        )
+
         return suspendCancellableCoroutine { continuation ->
             val jsonPayload = JSONObject(socketEventParser.encodePayload(payload))
             currentSocket.emit(EVENT_MESSAGE_SEND, jsonPayload, io.socket.client.Ack { args ->
                 if (continuation.isCancelled) return@Ack
                 val raw = args.firstOrNull()?.toJsonString()
                 if (raw == null) {
+                    OutboxPipelineTrace.stage(
+                        stage = "SOCKET_SEND_ACK",
+                        clientMessageId = payload.clientMessageId,
+                        conversationId = payload.conversationId,
+                        extra = mapOf("success" to "false", "error" to "empty_ack"),
+                    )
                     continuation.resume(Result.failure(IllegalStateException("Empty socket ack")))
                     return@Ack
                 }
-                continuation.resume(socketEventParser.parseSendMessageAck(raw))
+                val parsed = socketEventParser.parseSendMessageAck(raw)
+                OutboxPipelineTrace.stage(
+                    stage = "SOCKET_SEND_ACK",
+                    clientMessageId = payload.clientMessageId,
+                    serverMessageId = parsed.getOrNull()?.id,
+                    conversationId = payload.conversationId,
+                    extra = mapOf(
+                        "success" to parsed.isSuccess.toString(),
+                        "error" to parsed.exceptionOrNull()?.message,
+                    ),
+                )
+                continuation.resume(parsed)
             })
         }
     }
@@ -172,6 +214,11 @@ class SocketChatRealtimeClient(
 
         RuntimeDiagnostics.event(
             "DeliveryAck",
+            "SOCKET_EMIT event=$EVENT_MESSAGE_DELIVERED conversationId=$conversationId messageId=$messageId " +
+                "socketConnected=${diagnostics.connected} socketAuthenticated=${diagnostics.authenticated}",
+        )
+        RuntimeDiagnostics.event(
+            "DeliveryAck",
             "MESSAGE_DELIVERY_ACK_EMIT event=$EVENT_MESSAGE_DELIVERED conversationId=$conversationId " +
                 "messageId=$messageId socketConnected=${diagnostics.connected} " +
                 "socketAuthenticated=${diagnostics.authenticated} socketId=${diagnostics.socketId} " +
@@ -193,12 +240,18 @@ class SocketChatRealtimeClient(
                 }
                 val result = socketEventParser.parseAckSuccess(raw)
                 if (result.isSuccess) {
+                    RuntimeDiagnostics.event("DeliveryAck", "SOCKET_SUCCESS conversationId=$conversationId messageId=$messageId")
                     RuntimeDiagnostics.event(
                         "DeliveryAck",
                         "MESSAGE_DELIVERY_ACK_SUCCESS conversationId=$conversationId messageId=$messageId " +
                             "socketId=${diagnostics.socketId} ackResponse=$raw",
                     )
                 } else {
+                    RuntimeDiagnostics.event(
+                        "DeliveryAck",
+                        "SOCKET_FAILURE conversationId=$conversationId messageId=$messageId " +
+                            "error=${result.exceptionOrNull()?.message}",
+                    )
                     RuntimeDiagnostics.event(
                         "DeliveryAck",
                         "MESSAGE_DELIVERY_ACK_SKIPPED reason=ack_parse_failed conversationId=$conversationId " +
@@ -235,22 +288,43 @@ class SocketChatRealtimeClient(
     private fun registerListeners(currentSocket: Socket) {
         currentSocket.on(Socket.EVENT_CONNECT) {
             log.d { "socket connected" }
-            RuntimeDiagnostics.event("Socket", "connected")
+            SocketRoomTrace.stage(
+                stage = "SOCKET_TCP_CONNECTED",
+                extra = mapOf(
+                    "socketId" to (currentSocket.id() ?: "null"),
+                    "authenticated" to "false",
+                ),
+            )
+            RuntimeDiagnostics.event("Socket", "connected socketId=${currentSocket.id()}")
             _connectionState.value = RealtimeConnectionState.Connected
             backoffMs = INITIAL_BACKOFF_MS
             reconnectAttempt = 0
         }
 
         currentSocket.on(Socket.EVENT_DISCONNECT) { args ->
-            log.w { "socket disconnected: ${args.firstOrNull()}" }
-            RuntimeDiagnostics.event("Socket", "disconnected reason=${args.firstOrNull()}")
+            val reason = args.firstOrNull()?.toString() ?: "unknown"
+            log.w { "socket disconnected: $reason" }
+            SocketRoomTrace.stage(
+                stage = "SOCKET_DISCONNECT",
+                extra = mapOf(
+                    "socketId" to (currentSocket.id() ?: "null"),
+                    "reason" to reason,
+                    "wasAuthenticated" to (connectionDiagnostics().authenticated).toString(),
+                ),
+            )
+            RealtimeTransportClock.recordSocketDisconnected()
+            RuntimeDiagnostics.event("Socket", "disconnected reason=$reason socketId=${currentSocket.id()}")
             _connectionState.value = RealtimeConnectionState.Disconnected
             scheduleReconnect()
         }
 
         currentSocket.on(Socket.EVENT_CONNECT_ERROR) { args ->
-            val error = args.firstOrNull()
+            val error = args.firstOrNull()?.toString() ?: "unknown"
             log.w { "socket connect_error: $error" }
+            SocketRoomTrace.stage(
+                stage = "SOCKET_CONNECT_ERROR",
+                extra = mapOf("error" to error),
+            )
             _connectionState.value = RealtimeConnectionState.Disconnected
             scheduleReconnect()
         }
@@ -260,6 +334,36 @@ class SocketChatRealtimeClient(
             runCatching { socketEventParser.parseReady(raw) }
                 .onSuccess { event ->
                     log.d { "socket ready for userId=${event.userId}" }
+                    val socketId = currentSocket.id() ?: "null"
+                    SocketRoomTrace.stage(
+                        stage = "SOCKET_AUTHENTICATED",
+                        extra = mapOf(
+                            "userId" to event.userId.toString(),
+                            "socketId" to socketId,
+                            "note" to "rooms_joined_server_side_before_socket_ready",
+                        ),
+                    )
+                    ReceiverSyncTrace.stage(
+                        stage = "SOCKET_AUTHENTICATED",
+                        trigger = "SocketChatRealtimeClient.socket:ready",
+                        extra = mapOf(
+                            "userId" to event.userId.toString(),
+                            "socketId" to socketId,
+                            "socketState" to "Ready",
+                        ),
+                    )
+                    RuntimeDiagnostics.event("Socket", "SOCKET_CONNECTED userId=${event.userId} socketId=$socketId")
+                    RealtimeTransportClock.recordSocketReady(
+                        userId = event.userId,
+                        socketId = currentSocket.id(),
+                    )
+                    OutboxPipelineTrace.stage(
+                        stage = "SOCKET_CONNECTED",
+                        extra = mapOf(
+                            "userId" to event.userId.toString(),
+                            "socketId" to (currentSocket.id() ?: "null"),
+                        ),
+                    )
                     _connectionState.value = RealtimeConnectionState.Ready(event.userId)
                     scope.launch { _events.emit(event) }
                 }
@@ -269,7 +373,19 @@ class SocketChatRealtimeClient(
         currentSocket.on(EVENT_MESSAGE_NEW) { args ->
             val raw = args.firstOrNull()?.toJsonString() ?: return@on
             runCatching { socketEventParser.parseMessageNew(raw) }
-                .onSuccess { event -> scope.launch { _events.emit(event) } }
+                .onSuccess { event ->
+                    SocketRoomTrace.stage(
+                        stage = "SOCKET_MESSAGE_NEW",
+                        extra = mapOf(
+                            "socketId" to (currentSocket.id() ?: "null"),
+                            "conversationId" to event.conversationId.toString(),
+                            "messageId" to (event.message.id?.toString() ?: "null"),
+                            "clientMessageId" to (event.message.clientMessageId ?: "null"),
+                            "authenticated" to connectionDiagnostics().authenticated.toString(),
+                        ),
+                    )
+                    scope.launch { _events.emit(event) }
+                }
                 .onFailure { error -> log.w(error) { "failed to parse message:new: $raw" } }
         }
 
@@ -309,6 +425,14 @@ class SocketChatRealtimeClient(
         reconnectJob?.cancel()
         reconnectJob = scope.launch {
             reconnectAttempt += 1
+            SocketRoomTrace.stage(
+                stage = "SOCKET_RECONNECT_ATTEMPT",
+                extra = mapOf(
+                    "attempt" to reconnectAttempt.toString(),
+                    "backoffMs" to backoffMs.toString(),
+                    "previousSocketId" to (socket?.id() ?: "null"),
+                ),
+            )
             RuntimeDiagnostics.event("Socket", "reconnect attempt=$reconnectAttempt backoffMs=$backoffMs")
             _connectionState.value = RealtimeConnectionState.Reconnecting(reconnectAttempt)
             delay(backoffMs)

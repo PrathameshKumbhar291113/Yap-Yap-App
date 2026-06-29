@@ -6,8 +6,11 @@ import com.yapyap.core.realtime.ChatRealtimeRepository
 import com.yapyap.core.realtime.IncomingMessageNotifier
 import com.yapyap.core.realtime.MessageDeliveryAcknowledgementGateway
 import com.yapyap.core.realtime.MessageDeliveryAcknowledgementService
+import com.yapyap.feature.chat.data.outbox.OutgoingMessageOutboxGateway
 import com.yapyap.core.realtime.PresenceStore
 import com.yapyap.core.realtime.RealtimeCoordinator
+import com.yapyap.core.realtime.reconcile.ReceiverRepairGateway
+import com.yapyap.core.realtime.reconcile.ReceiverRepairService
 import com.yapyap.core.realtime.SocketEventParser
 import com.yapyap.core.realtime.TokenRefreshNotifier
 import com.yapyap.core.realtime.TypingStore
@@ -48,14 +51,25 @@ val realtimeModule = module {
             deliveryAckService = get(),
         )
     }
+    single<ReceiverRepairGateway> {
+        ReceiverRepairService(
+            conversationRepository = get(),
+            chatRepository = get(),
+            observeAuthStateUseCase = get(),
+            networkMonitor = get(),
+            chatRealtimeClient = get(),
+            dispatcherProvider = get(),
+        )
+    }
     single {
         RealtimeCoordinator(
             observeAuthStateUseCase = get(),
             tokenStorage = get(),
             chatRealtimeClient = get(),
-            chatRealtimeRepository = get(),
-            conversationRepository = get(),
-            deliveryAckService = get(),
+            chatRealtimeRepository = lazy { get() },
+            receiverRepairGateway = lazy { get() },
+            deliveryAckService = lazy { get() },
+            outboxGateway = lazy { get() },
             sessionEvents = get(),
             tokenRefreshNotifier = get(),
             dispatcherProvider = get(),

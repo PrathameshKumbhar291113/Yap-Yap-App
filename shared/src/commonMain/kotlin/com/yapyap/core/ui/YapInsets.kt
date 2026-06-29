@@ -11,18 +11,46 @@ val YapZeroWindowInsets: WindowInsets = WindowInsets(0, 0, 0, 0)
 
 object YapInsets {
     /**
-     * Status bar only — bottom safe area is handled by [androidx.compose.material3.Scaffold] bottom bars.
-     * Avoids stacking top + bottom padding twice on chat input and tabs.
+     * Horizontal safe drawing only for nested scaffolds inside [com.yapyap.core.navigation.MainScaffold].
+     * Top inset is consumed by each screen's TopAppBar; bottom by the navigation bar.
      */
-    val content: WindowInsets
+    val scaffoldContent: WindowInsets
         @Composable
-        get() = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
+        get() = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)
 
     /**
-     * Parent [androidx.compose.material3.Scaffold] already applies [content]; TopAppBar should not
-     * add status-bar padding again.
+     * Horizontal safe drawing for standalone screens (chat, auth) that own their TopAppBar.
      */
-    val topAppBar: WindowInsets
+    val screenContent: WindowInsets
         @Composable
-        get() = YapZeroWindowInsets
+        get() = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)
+
+    /**
+     * TopAppBar on standalone screens (Chat, Auth) — consumes status-bar safe area once.
+     */
+    val topAppBarStandalone: WindowInsets
+        @Composable
+        get() = platformTopAppBarStandalone()
+
+    /**
+     * TopAppBar on tab screens nested inside [com.yapyap.core.navigation.MainScaffold].
+     * On iOS the UIKit safe area already offsets content; extra TopAppBar insets double-count.
+     */
+    val topAppBarNested: WindowInsets
+        @Composable
+        get() = platformTopAppBarNested()
+
+    /** Bottom navigation bar — platform-tuned to avoid double-counting home indicator. */
+    val bottomNavigationBar: WindowInsets
+        @Composable
+        get() = platformBottomNavigationBar()
 }
+
+@Composable
+expect fun platformTopAppBarStandalone(): WindowInsets
+
+@Composable
+expect fun platformTopAppBarNested(): WindowInsets
+
+@Composable
+expect fun platformBottomNavigationBar(): WindowInsets

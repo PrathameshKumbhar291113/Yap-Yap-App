@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- iOS home-screen icon: full-bleed teal (matches Android adaptive icon after mask crop). -->
+<svg xmlns="http://www.w3.org/2000/svg" width="108" height="108" viewBox="0 0 108 108">
+  <rect width="108" height="108" fill="#00897B"/>
+  <g transform="matrix(2.475,0,0,2.475,24.3,24.3)">
+    <path fill="#FFFFFF" d="M2.5,9.5c0,-2.5 2,-4.5 4.5,-4.5h3c2.5,0 4.5,2 4.5,4.5v2.8c0,2.5 -2,4.5 -4.5,4.5H7.2L5,18.5v-2.2C3.4,15.5 2.5,13.6 2.5,11.5V9.5z"/>
+    <path fill="#FFFFFF" d="M11,10.5c0,-2 1.6,-3.5 3.5,-3.5h3.5c1.9,0 3.5,1.5 3.5,3.5v2.5c0,2 -1.6,3.5 -3.5,3.5h-2l-1.8,1.8v-2c-1.4,-0.4 -2.2,-1.6 -2.2,-3V10.5z"/>
+    <circle fill="#FFFFFF" cx="6.5" cy="10.5" r="0.9"/>
+    <circle fill="#FFFFFF" cx="9.5" cy="10.5" r="0.9"/>
+    <circle fill="#FFFFFF" cx="12.5" cy="10.5" r="0.9"/>
+    <circle fill="#FFFFFF" cx="14.5" cy="11.5" r="0.8"/>
+    <circle fill="#FFFFFF" cx="17" cy="11.5" r="0.8"/>
+    <circle fill="#FFFFFF" cx="19.5" cy="11.5" r="0.8"/>
+  </g>
+</svg>

@@ -13,10 +13,22 @@
 - [ ] Tap notification → app opens to correct chat
 - [ ] Message synced to local DB before tap
 
-### Killed
-- [ ] Swipe app from recents → send message → system notification appears
-- [ ] Tap notification → app cold-starts into correct chat
-- [ ] `adb shell am force-stop com.yapyap` then send → notification still arrives (not force-stop blocked)
+### Killed (data-only FCM — production path)
+Backend must send **Android data-only** (`payloadStrategy: android_data_only`, no top-level `notification` block). Verify in backend logs before testing.
+
+- [ ] `adb shell am force-stop com.yapyap` → send message → notification appears
+- [ ] While process is dead: `YapFirebaseMessagingService.onMessageReceived` runs (logcat `YapRuntimeDiag`)
+- [ ] While process is dead: `APPLICATION_NOTIFICATION_CREATED` (app-built tray, not OS hybrid)
+- [ ] While process is dead: `DeliveryAck` + `SOCKET_EMIT message:delivered` (sender sees ✓✓)
+- [ ] Tap notification → `PushIntentParser` sees `yapyap_from_notification=true` → chat opens (not launcher-only `ACTION_MAIN`)
+- [ ] Swipe app from recents (without force-stop) → same behaviour as above
+
+**Backend log grep (per send):**
+```
+payloadStrategy":"android_data_only"
+hasTopLevelNotification":false
+priority":"high"
+```
 
 ### Rebooted device
 - [ ] Reboot device without opening app → send message → notification arrives (requires prior token registration)
@@ -27,6 +39,28 @@
 - [ ] Grant permission → device registers with backend
 - [ ] Deny permanently → settings screen opens
 - [ ] Re-grant in settings → notifications work on next resume
+
+### OEM / battery optimization matrix (physical devices required)
+
+Data-only + `android.priority: high` is correct for production, but some OEMs delay or drop background work. Test on real hardware — emulators do not reproduce Doze/OEM kills.
+
+| OEM | Models to test | Extra steps |
+|-----|----------------|-------------|
+| **Google Pixel / stock Android** | Any | Baseline — expect reliable delivery |
+| **Samsung** | Galaxy (One UI) | Test force-stop + swipe-away; check "Sleeping apps" / "Deep sleeping apps" lists |
+| **Xiaomi / Redmi / POCO** | MIUI / HyperOS | Disable battery saver for YapYap; allow autostart; lock app in recents |
+| **Oppo / Realme / OnePlus** | ColorOS / OxygenOS | Allow background activity; disable battery optimization for YapYap |
+| **Vivo / iQOO** | Funtouch / OriginOS | Allow high background power consumption; add to protected apps |
+
+**Per OEM pass criteria:**
+- [ ] Force-stop → message within 30s → tray notification + delivery ack
+- [ ] Tap → deep link to correct chat
+- [ ] Background (home, not force-stop) → same within 30s
+- [ ] After 15 min screen-off (Doze) → message still arrives (may be delayed ≤ few minutes on aggressive OEMs)
+
+**If delivery fails on an OEM:** capture `adb logcat YapRuntimeDiag:I FirebaseMessaging:I *:S` and backend `[PUSH_DIAG] fcm_invoke` with `fcmPayload`. Distinguish backend-not-sent vs OEM-delayed vs client-not-displayed.
+
+**Future client UX (optional):** in-app guidance when repeated push failures detected on known aggressive OEMs (battery/autostart settings). Do not block core flow on this.
 
 ---
 

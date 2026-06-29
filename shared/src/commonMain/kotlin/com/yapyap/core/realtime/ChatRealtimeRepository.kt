@@ -1,6 +1,9 @@
 package com.yapyap.core.realtime
 
+import com.yapyap.core.diagnostics.OutboxPipelineTrace
+import com.yapyap.core.diagnostics.ReceiverSyncTrace
 import com.yapyap.core.diagnostics.RuntimeDiagnostics
+import com.yapyap.core.diagnostics.SocketRoomTrace
 import com.yapyap.core.push.PushMessageDeduplicator
 import com.yapyap.core.push.PushNotificationCoordinator
 import com.yapyap.feature.auth.domain.model.AuthState
@@ -49,7 +52,7 @@ class ChatRealtimeRepository(
 
     private suspend fun handleEvent(event: SocketEvent) {
         when (event) {
-            is SocketEvent.Ready -> Unit
+            is SocketEvent.Ready -> handleSocketReady(event)
             is SocketEvent.MessageNew -> handleMessageNew(event)
             is SocketEvent.MessageStatus -> handleMessageStatus(event)
             is SocketEvent.Typing -> handleTyping(event)
@@ -57,37 +60,110 @@ class ChatRealtimeRepository(
         }
     }
 
+    private fun handleSocketReady(event: SocketEvent.Ready) {
+        val diagnostics = chatRealtimeClient.connectionDiagnostics()
+        val activeConversationId = activeConversationTracker.activeConversationId.value
+        ReceiverSyncTrace.stage(
+            stage = "SOCKET_READY_EVENT",
+            conversationId = activeConversationId,
+            trigger = "ChatRealtimeRepository.handleSocketReady",
+            extra = mapOf(
+                "userId" to event.userId.toString(),
+                "socketId" to (diagnostics.socketId ?: "null"),
+                "socketAuthenticated" to diagnostics.authenticated.toString(),
+                "activeConversationId" to (activeConversationId?.toString() ?: "null"),
+                "repairAction" to "none",
+            ),
+        )
+    }
+
     private suspend fun handleMessageNew(event: SocketEvent.MessageNew) {
         val message = event.message.toDomain()
         val messageId = message.id
-        val alreadyHandled = messageId != null && deduplicator.hasSeen(messageId.toString())
-        if (messageId != null) {
-            deduplicator.markSeen(messageId.toString())
+        val diagnostics = chatRealtimeClient.connectionDiagnostics()
+        SocketRoomTrace.stage(
+            stage = "SOCKET_MESSAGE_NEW_HANDLED",
+            extra = mapOf(
+                "conversationId" to event.conversationId.toString(),
+                "messageId" to (messageId?.toString() ?: "null"),
+                "clientMessageId" to (message.clientMessageId ?: "null"),
+                "socketId" to (diagnostics.socketId ?: "null"),
+                "socketConnected" to diagnostics.connected.toString(),
+                "socketAuthenticated" to diagnostics.authenticated.toString(),
+                "activeConversationId" to (activeConversationTracker.activeConversationId.value?.toString() ?: "null"),
+            ),
+        )
+        OutboxPipelineTrace.stage(
+            stage = "MESSAGE_NEW_RECEIVED",
+            clientMessageId = message.clientMessageId,
+            serverMessageId = messageId,
+            conversationId = event.conversationId,
+            extra = mapOf(
+                "senderId" to message.senderId.toString(),
+                "currentUserId" to currentUserId?.toString(),
+                "stableKey" to message.stableKey,
+            ),
+        )
+        val dedupKey = messageId?.toString()
+        val alreadyHandled = dedupKey != null && deduplicator.hasSeen(dedupKey)
+        val dedupReason = when {
+            dedupKey == null -> "no_server_message_id"
+            alreadyHandled -> "message_id_already_seen"
+            else -> "not_seen"
+        }
+        OutboxPipelineTrace.stage(
+            stage = "DEDUP_CHECK",
+            clientMessageId = message.clientMessageId,
+            serverMessageId = messageId,
+            conversationId = event.conversationId,
+            extra = mapOf(
+                "stableKey" to message.stableKey,
+                "dedupKey" to dedupKey,
+                "alreadyHandled" to alreadyHandled.toString(),
+                "reason" to dedupReason,
+                "note" to "dedup_only_affects_push_notification_not_cache_upsert",
+            ),
+        )
+        if (dedupKey != null) {
+            deduplicator.markSeen(dedupKey)
         }
 
         val resolvedUserId = (observeAuthStateUseCase().value as? AuthState.Authenticated)?.user?.id
-        val isFromOther = resolvedUserId != null && message.senderId != resolvedUserId
-        if (isFromOther && messageId != null) {
+        val shouldAck = messageId != null && shouldAckInboundMessage(message.senderId, resolvedUserId)
+        if (shouldAck) {
             deliveryAckService.onMessageReceived(
                 source = "socket",
                 conversationId = event.conversationId,
-                messageId = messageId,
+                messageId = messageId!!,
                 senderId = message.senderId,
                 trigger = "ChatRealtimeRepository.handleMessageNew",
             )
         }
 
         chatRepository.upsertIncomingMessage(message)
+        OutboxPipelineTrace.stage(
+            stage = "UPSERT_MESSAGE",
+            clientMessageId = message.clientMessageId,
+            serverMessageId = messageId,
+            conversationId = event.conversationId,
+            extra = mapOf(
+                "stableKey" to message.stableKey,
+                "alreadyHandled" to alreadyHandled.toString(),
+                "upsertExecuted" to "true",
+            ),
+        )
 
-        if (isFromOther && messageId != null) {
+        if (shouldAck) {
             deliveryAckService.onMessagePersisted(
                 source = "socket",
                 conversationId = event.conversationId,
-                messageId = messageId,
+                messageId = messageId!!,
                 senderId = message.senderId,
                 trigger = "ChatRealtimeRepository.handleMessageNew",
             )
         }
+
+        val isFromOther = resolvedUserId != null && message.senderId != resolvedUserId
 
         val isViewing = activeConversationTracker.isViewing(event.conversationId)
         val wasUnknown = conversationRepository.applyIncomingMessage(
@@ -124,6 +200,17 @@ class ChatRealtimeRepository(
                 preview = message.previewText(),
             )
         }
+        OutboxPipelineTrace.stage(
+            stage = "CHAT_REALTIME_REPOSITORY_PROCESSED",
+            clientMessageId = message.clientMessageId,
+            serverMessageId = messageId,
+            conversationId = event.conversationId,
+            extra = mapOf(
+                "alreadyHandled" to alreadyHandled.toString(),
+                "wasUnknownConversation" to wasUnknown.toString(),
+                "isViewing" to isViewing.toString(),
+            ),
+        )
     }
 
     private suspend fun handleMessageStatus(event: SocketEvent.MessageStatus) {

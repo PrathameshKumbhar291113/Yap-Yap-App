@@ -9,11 +9,17 @@ import com.yapyap.feature.auth.domain.model.AuthState
 import com.yapyap.feature.auth.domain.usecase.ObserveAuthStateUseCase
 import com.yapyap.feature.conversations.domain.entity.displayTitle
 import com.yapyap.feature.conversations.domain.usecase.GetConversationsUseCase
+import com.yapyap.feature.chat.domain.usecase.DeleteOutgoingMessageUseCase
 import com.yapyap.feature.chat.domain.usecase.LoadMoreMessagesUseCase
 import com.yapyap.feature.chat.domain.usecase.MarkConversationReadUseCase
 import com.yapyap.feature.chat.domain.usecase.ObserveChatUseCase
 import com.yapyap.feature.chat.domain.usecase.ObserveTypingStateUseCase
+import com.yapyap.feature.chat.domain.usecase.RetryOutgoingMessageUseCase
 import com.yapyap.feature.chat.domain.usecase.SendMessageUseCase
+import com.yapyap.core.diagnostics.OutboxPipelineTrace
+import com.yapyap.core.diagnostics.ReceiverSyncTrace
+import com.yapyap.core.realtime.reconcile.ReceiverRepairGateway
+import com.yapyap.core.realtime.reconcile.ReceiverRepairService
 import com.yapyap.core.util.UserMessages
 import com.yapyap.core.util.toUserMessage
 import kotlinx.coroutines.Job
@@ -33,12 +39,15 @@ class ChatViewModel(
     private val observeChatUseCase: ObserveChatUseCase,
     private val loadMoreMessagesUseCase: LoadMoreMessagesUseCase,
     private val sendMessageUseCase: SendMessageUseCase,
+    private val retryOutgoingMessageUseCase: RetryOutgoingMessageUseCase,
+    private val deleteOutgoingMessageUseCase: DeleteOutgoingMessageUseCase,
     private val markConversationReadUseCase: MarkConversationReadUseCase,
     private val observeAuthStateUseCase: ObserveAuthStateUseCase,
     private val observeTypingStateUseCase: ObserveTypingStateUseCase,
     private val chatRealtimeClient: ChatRealtimeClient,
     private val activeConversationTracker: ActiveConversationTracker,
     private val pushNotificationCoordinator: PushNotificationCoordinator,
+    private val receiverRepairGateway: ReceiverRepairGateway,
 ) : ViewModel() {
     private val isInitialLoading = MutableStateFlow(true)
     private val initialError = MutableStateFlow<String?>(null)
@@ -101,9 +110,74 @@ class ChatViewModel(
     )
 
     init {
+        viewModelScope.launch {
+            observeChatUseCase(conversationId).collect { messages ->
+                OutboxPipelineTrace.stage(
+                    stage = "UI_MESSAGES_RECOMPOSED",
+                    conversationId = conversationId,
+                    extra = mapOf(
+                        "messageCount" to messages.size.toString(),
+                        "pendingCount" to messages.count { it.isPending }.toString(),
+                        "serverIds" to messages.mapNotNull { it.id }.joinToString(","),
+                        "clientIds" to messages.mapNotNull { it.clientMessageId }.joinToString(","),
+                    ),
+                )
+                ReceiverSyncTrace.stage(
+                    stage = "UI_MESSAGES_RECOMPOSED",
+                    conversationId = conversationId,
+                    latestServerMessageId = messages.mapNotNull { it.id }.maxOrNull(),
+                    trigger = "ChatViewModel.observeChatUseCase",
+                    extra = mapOf(
+                        "messageCount" to messages.size.toString(),
+                        "uiRecomposed" to "true",
+                    ),
+                )
+            }
+        }
         activeConversationTracker.setActiveConversationId(conversationId)
         pushNotificationCoordinator.onConversationOpened(conversationId)
-        refreshLatest()
+        repairOnOpen()
+    }
+
+    private fun repairOnOpen() {
+        viewModelScope.launch {
+            val lastKnownMessageId = observeChatUseCase(conversationId).first()
+                .mapNotNull { it.id }
+                .maxOrNull()
+            ReceiverSyncTrace.stage(
+                stage = "CHAT_REPAIR_ON_OPEN_BEGIN",
+                conversationId = conversationId,
+                lastKnownMessageId = lastKnownMessageId,
+                trigger = ReceiverRepairService.TRIGGER_CHAT_OPEN,
+            )
+            isInitialLoading.value = true
+            initialError.value = null
+            receiverRepairGateway.repairConversation(
+                conversationId = conversationId,
+                trigger = ReceiverRepairService.TRIGGER_CHAT_OPEN,
+            ).onSuccess { result ->
+                isInitialLoading.value = false
+                ReceiverSyncTrace.stage(
+                    stage = "CHAT_REPAIR_ON_OPEN_DONE",
+                    conversationId = conversationId,
+                    latestServerMessageId = result.serverLatestMessageId,
+                    trigger = ReceiverRepairService.TRIGGER_CHAT_OPEN,
+                    extra = mapOf(
+                        "strategy" to result.strategy.name,
+                        "messagesMerged" to result.messagesMerged.toString(),
+                    ),
+                )
+            }.onFailure { error ->
+                isInitialLoading.value = false
+                initialError.value = error.toUserMessage(UserMessages.UNKNOWN)
+                ReceiverSyncTrace.stage(
+                    stage = "CHAT_REPAIR_ON_OPEN_FAILED",
+                    conversationId = conversationId,
+                    trigger = ReceiverRepairService.TRIGGER_CHAT_OPEN,
+                    extra = mapOf("error" to error.message),
+                )
+            }
+        }
     }
 
     fun onReachedBottom() {
@@ -131,14 +205,38 @@ class ChatViewModel(
 
     fun refreshLatest() {
         viewModelScope.launch {
+            val lastKnownMessageId = observeChatUseCase(conversationId).first()
+                .mapNotNull { it.id }
+                .maxOrNull()
+            ReceiverSyncTrace.stage(
+                stage = "CHAT_REFRESH_LATEST_BEGIN",
+                conversationId = conversationId,
+                lastKnownMessageId = lastKnownMessageId,
+                trigger = "ChatViewModel.refreshLatest",
+            )
             isInitialLoading.value = true
             initialError.value = null
-            loadMoreMessagesUseCase.loadLatest(conversationId)
-                .onSuccess { isInitialLoading.value = false }
-                .onFailure { error ->
-                    isInitialLoading.value = false
-                    initialError.value = error.toUserMessage(UserMessages.UNKNOWN)
-                }
+            receiverRepairGateway.repairConversation(
+                conversationId = conversationId,
+                trigger = "ChatViewModel.refreshLatest",
+            ).onSuccess {
+                isInitialLoading.value = false
+                ReceiverSyncTrace.stage(
+                    stage = "CHAT_REFRESH_LATEST_DONE",
+                    conversationId = conversationId,
+                    trigger = "ChatViewModel.refreshLatest",
+                    extra = mapOf("uiRecomposed" to "pending_flow_collect"),
+                )
+            }.onFailure { error ->
+                isInitialLoading.value = false
+                initialError.value = error.toUserMessage(UserMessages.UNKNOWN)
+                ReceiverSyncTrace.stage(
+                    stage = "CHAT_REFRESH_LATEST_FAILED",
+                    conversationId = conversationId,
+                    trigger = "ChatViewModel.refreshLatest",
+                    extra = mapOf("error" to error.message),
+                )
+            }
         }
     }
 
@@ -165,10 +263,19 @@ class ChatViewModel(
                 .onSuccess {
                     inputText.value = ""
                 }
-                .onFailure { error ->
-                    sendError.value = error.toUserMessage(UserMessages.SEND_MESSAGE_FAILED)
-                }
             isSending.value = false
+        }
+    }
+
+    fun retryMessage(clientMessageId: String) {
+        viewModelScope.launch {
+            retryOutgoingMessageUseCase(clientMessageId)
+        }
+    }
+
+    fun deleteMessage(clientMessageId: String) {
+        viewModelScope.launch {
+            deleteOutgoingMessageUseCase(clientMessageId)
         }
     }
 

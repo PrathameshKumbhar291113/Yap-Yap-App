@@ -20,6 +20,13 @@ import java.net.URL
 object PushNotificationDisplay {
 
     fun show(context: android.content.Context, notification: LocalPushNotification) {
+        RuntimeDiagnostics.enter(
+            "Notification",
+            "PushNotificationDisplay.show",
+            "tag=${notification.tag} notificationId=${notification.notificationId} " +
+                "conversationId=${notification.conversationId} messageId=${notification.messageId}",
+        )
+        RuntimeDiagnostics.event("Notification", "APPLICATION_NOTIFICATION_CREATED tag=${notification.tag}")
         if (!hasPostNotificationsPermission(context)) {
             RuntimeDiagnostics.event(
                 "Notification",
@@ -38,6 +45,7 @@ object PushNotificationDisplay {
             )
             return
         }
+        AndroidPushRuntimeTrace.dumpPendingIntentExtras("Notification", launchIntent)
         val notifyId = notification.notificationId ?: fallbackNotificationId(notification)
         val tag = notification.tag
 
@@ -46,6 +54,11 @@ object PushNotificationDisplay {
             notifyId,
             launchIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        RuntimeDiagnostics.event(
+            "Notification",
+            "PendingIntent.getActivity requestCode=$notifyId flags=UPDATE_CURRENT|IMMUTABLE " +
+                "tag=$tag conversationId=${notification.conversationId} messageId=${notification.messageId}",
         )
 
         val channelId = PushNotificationChannels.idFor(notification.channel)
@@ -57,8 +70,6 @@ object PushNotificationDisplay {
 
         val builder = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(smallIcon)
-            .setContentTitle(notification.title)
-            .setContentText(notification.body)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
             .setOnlyAlertOnce(true)
@@ -67,7 +78,11 @@ object PushNotificationDisplay {
 
         notification.tag?.let { builder.setGroup(notification.groupKey ?: it) }
 
-        applyMessagingStyle(builder, notification)
+        val usedMessagingStyle = applyMessagingStyle(builder, notification)
+        if (!usedMessagingStyle) {
+            builder.setContentTitle(notification.title)
+            builder.setContentText(notification.body)
+        }
         applyImageStyle(context, builder, notification)
 
         val built = builder.build()
@@ -75,14 +90,16 @@ object PushNotificationDisplay {
         val manager = NotificationManagerCompat.from(context)
         try {
             if (tag != null) {
+                RuntimeDiagnostics.enter("Notification", "NotificationManager.notify", "tag=$tag id=$notifyId")
+                manager.notify(tag, notifyId, built)
+                if (notification.showGroupSummary) {
+                    postGroupSummaryIfNeeded(context, notification)
+                }
                 RuntimeDiagnostics.event(
                     "Notification",
-                    "NotificationManager.notify() tag=$tag id=$notifyId channel=$channelId " +
-                        "importance=HIGH smallIcon=$smallIcon threadId=${notification.threadId} " +
-                        "conversationId=${notification.conversationId} pendingIntent=requestCode=$notifyId",
+                    "NOTIFICATION_REPLACED tag=$tag id=$notifyId conversationId=${notification.conversationId} " +
+                        "messages=${notification.messageHistory.size}",
                 )
-                manager.notify(tag, notifyId, built)
-                postGroupSummaryIfNeeded(context, notification)
             } else {
                 RuntimeDiagnostics.event(
                     "Notification",
@@ -131,9 +148,12 @@ object PushNotificationDisplay {
     private fun applyMessagingStyle(
         builder: NotificationCompat.Builder,
         notification: LocalPushNotification,
-    ) {
-        if (notification.isSummary) return
-        if (notification.channel == PushNotificationChannel.Calls) return
+    ): Boolean {
+        if (notification.isSummary) return false
+        if (notification.channel == PushNotificationChannel.Calls) return false
+
+        val history = notification.messageHistory
+        if (history.isEmpty()) return false
 
         val sender = Person.Builder()
             .setName(notification.title)
@@ -142,9 +162,17 @@ object PushNotificationDisplay {
 
         val style = NotificationCompat.MessagingStyle(sender)
             .setConversationTitle(notification.title)
-            .addMessage(notification.body, System.currentTimeMillis(), sender)
+
+        history.forEach { message ->
+            val person = Person.Builder()
+                .setName(message.senderName)
+                .build()
+            style.addMessage(message.text, message.timestamp, person)
+        }
 
         builder.setStyle(style)
+        builder.setContentText(history.last().text)
+        return true
     }
 
     private fun applyImageStyle(
@@ -260,13 +288,31 @@ object PushIntentExtras {
 
 object PushIntentParser {
     fun parse(intent: Intent?): Map<String, String>? {
-        if (intent == null) return null
+        RuntimeDiagnostics.enter("DeepLink", "PushIntentParser.parse")
+        if (intent == null) {
+            RuntimeDiagnostics.event("DeepLink", "PushIntentParser.parse result=null reason=intent_null")
+            return null
+        }
+        AndroidPushRuntimeTrace.dumpIntent("DeepLink", "PushIntentParser.input", intent)
         if (!intent.getBooleanExtra(PushIntentExtras.FROM_NOTIFICATION, false)) {
             val hasPushType = intent.extras?.containsKey("type") == true
-            if (!hasPushType) return null
+            RuntimeDiagnostics.event(
+                "DeepLink",
+                "PushIntentParser fromNotification=false hasPushType=$hasPushType",
+            )
+            if (!hasPushType) {
+                RuntimeDiagnostics.event(
+                    "DeepLink",
+                    "PushIntentParser result=null reason=no_from_notification_and_no_type",
+                )
+                return null
+            }
         }
-        val extras = intent.extras ?: return null
-        return extras.keySet()
+        val extras = intent.extras ?: run {
+            RuntimeDiagnostics.event("DeepLink", "PushIntentParser result=null reason=extras_null")
+            return null
+        }
+        val parsed = extras.keySet()
             .mapNotNull { key ->
                 if (key == PushIntentExtras.FROM_NOTIFICATION) return@mapNotNull null
                 val value = extras.get(key)?.toString()
@@ -274,5 +320,7 @@ object PushIntentParser {
             }
             .toMap()
             .takeIf { it.isNotEmpty() }
+        RuntimeDiagnostics.event("DeepLink", "PushIntentParser result=$parsed")
+        return parsed
     }
 }

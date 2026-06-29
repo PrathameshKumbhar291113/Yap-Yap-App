@@ -87,11 +87,11 @@ fun LoginScreen(
     }
 
     Scaffold(
-        contentWindowInsets = YapInsets.content,
+        contentWindowInsets = YapInsets.screenContent,
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(Res.string.sign_in)) },
-                windowInsets = YapInsets.topAppBar,
+                windowInsets = YapInsets.topAppBarStandalone,
             )
         },
     ) { innerPadding ->
@@ -150,10 +150,10 @@ internal fun AuthForm(
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .imePadding()
-                            .padding(
-                                horizontal = YapScreenHorizontalPadding,
-                                vertical = YapSpacing.md,
-                            ),
+                .padding(
+                    horizontal = YapScreenHorizontalPadding,
+                    vertical = YapSpacing.md,
+                ),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {

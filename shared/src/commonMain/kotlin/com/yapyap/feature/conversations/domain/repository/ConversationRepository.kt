@@ -26,4 +26,7 @@ interface ConversationRepository {
 
     /** Clears local unread badge after the server read cursor is updated. */
     fun applyConversationRead(conversationId: Int)
+
+    /** Current in-memory conversation list (for pre-refresh snapshot). */
+    fun snapshotConversations(): List<Conversation>
 }

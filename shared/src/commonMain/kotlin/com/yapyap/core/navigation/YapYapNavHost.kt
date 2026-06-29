@@ -11,6 +11,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.toRoute
+import com.yapyap.core.diagnostics.RuntimeDiagnostics
 import com.yapyap.core.datastore.TokenStorage
 import com.yapyap.core.push.PushNavigationRouter
 import com.yapyap.core.push.model.PushNavigationTarget
@@ -43,6 +45,14 @@ fun YapYapNavHost(
     val bootstrapState by sessionManager.bootstrapState.collectAsState()
     val sessionExpiredMessage = stringResource(Res.string.session_expired)
 
+    LaunchedEffect(bootstrapState) {
+        RuntimeDiagnostics.event("Navigation", "BootstrapState=$bootstrapState NavHostAttached=true")
+    }
+
+    LaunchedEffect(Unit) {
+        RuntimeDiagnostics.enter("Navigation", "YapYapNavHost.compose", "NavHostReady=true")
+    }
+
     LaunchedEffect(sessionManager, sessionExpiredMessage) {
         sessionManager.sessionExpired.collect {
             if (sessionManager.bootstrapState.value != BootstrapState.Authenticated) {
@@ -68,22 +78,39 @@ fun YapYapNavHost(
         }
     }
 
-    LaunchedEffect(pushNavigationRouter, chatRealtimeClient) {
-        pushNavigationRouter.targets.collect { target ->
-            if (bootstrapState != BootstrapState.Authenticated) return@collect
+    LaunchedEffect(pushNavigationRouter, chatRealtimeClient, bootstrapState) {
+        if (bootstrapState != BootstrapState.Authenticated) return@LaunchedEffect
+        pushNavigationRouter.consumePending()?.let { target ->
             when (target) {
-                is PushNavigationTarget.Chat -> {
-                    navController.navigate(Route.MAIN) {
-                        popUpTo(Route.SPLASH) { inclusive = false }
-                        launchSingleTop = true
-                    }
-                    navController.navigate(YapYapRoute.Chat(target.conversationId)) {
-                        launchSingleTop = true
-                    }
-                    tokenStorage.getAccessToken()?.let { token ->
-                        chatRealtimeClient.connect(token)
-                    }
+                is PushNavigationTarget.Chat -> executePushNavigation(
+                    target = target,
+                    navController = navController,
+                    chatRealtimeClient = chatRealtimeClient,
+                    tokenStorage = tokenStorage,
+                )
+                is PushNavigationTarget.IncomingCall -> {
+                    snackbarHostState.showSnackbar("Incoming call from notification")
                 }
+            }
+        }
+    }
+
+    LaunchedEffect(pushNavigationRouter, chatRealtimeClient, bootstrapState) {
+        pushNavigationRouter.targets.collect { target ->
+            if (bootstrapState != BootstrapState.Authenticated) {
+                RuntimeDiagnostics.event(
+                    "Navigation",
+                    "PushNavigation DEFERRED target=$target bootstrapState=$bootstrapState",
+                )
+                return@collect
+            }
+            when (target) {
+                is PushNavigationTarget.Chat -> executePushNavigation(
+                    target = target,
+                    navController = navController,
+                    chatRealtimeClient = chatRealtimeClient,
+                    tokenStorage = tokenStorage,
+                )
                 is PushNavigationTarget.IncomingCall -> {
                     snackbarHostState.showSnackbar("Incoming call from notification")
                 }
@@ -170,10 +197,20 @@ fun YapYapNavHost(
             }
 
             composable<YapYapRoute.Chat> { backStackEntry ->
-                val conversationId = backStackEntry.readConversationId()
+                val chatRoute = backStackEntry.toRoute<YapYapRoute.Chat>()
+                val conversationId = chatRoute.conversationId
+
+                LaunchedEffect(conversationId, chatRoute.openAtLatest) {
+                    RuntimeDiagnostics.enter(
+                        "Navigation",
+                        "ChatScreen.compose",
+                        "CHAT_OPENED conversationId=$conversationId openAtLatest=${chatRoute.openAtLatest}",
+                    )
+                }
 
                 ChatScreen(
                     conversationId = conversationId,
+                    openAtLatest = chatRoute.openAtLatest,
                     onBack = { navController.popBackStack() },
                 )
             }
@@ -182,3 +219,34 @@ fun YapYapNavHost(
 }
 
 private const val MAX_NOTIFICATION_PREVIEW_LENGTH = 80
+
+private fun executePushNavigation(
+    target: PushNavigationTarget.Chat,
+    navController: androidx.navigation.NavHostController,
+    chatRealtimeClient: ChatRealtimeClient,
+    tokenStorage: TokenStorage,
+) {
+    RuntimeDiagnostics.enter(
+        "Navigation",
+        "executePushNavigation",
+        "currentDestination=${navController.currentDestination?.route} targetConversationId=${target.conversationId}",
+    )
+    RuntimeDiagnostics.event(
+        "Navigation",
+        "NAVIGATION_EXECUTED conversationId=${target.conversationId}",
+    )
+    navController.navigate(Route.MAIN) {
+        popUpTo(Route.SPLASH) { inclusive = true }
+        launchSingleTop = true
+    }
+    navController.navigate(YapYapRoute.Chat(conversationId = target.conversationId, openAtLatest = true)) {
+        launchSingleTop = true
+    }
+    tokenStorage.getAccessToken()?.let { token ->
+        chatRealtimeClient.connect(token)
+    }
+    RuntimeDiagnostics.event(
+        "Navigation",
+        "CHAT_OPENED conversationId=${target.conversationId}",
+    )
+}

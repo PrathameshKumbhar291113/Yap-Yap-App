@@ -2,6 +2,8 @@ package com.yapyap.core.realtime
 
 import co.touchlab.kermit.Logger
 import com.yapyap.core.datastore.TokenStorage
+import com.yapyap.core.diagnostics.OutboxPipelineTrace
+import com.yapyap.core.diagnostics.RealtimeTransportClock
 import com.yapyap.core.diagnostics.RuntimeDiagnostics
 import com.yapyap.core.network.Environment
 import com.yapyap.core.util.DispatcherProvider
@@ -208,6 +210,7 @@ class SocketChatRealtimeClient(
             }
             SocketConstants.NATIVE_DISCONNECT -> {
                 nativeConnected = false
+                RealtimeTransportClock.recordSocketDisconnected()
                 RuntimeDiagnostics.event("Socket", "disconnected")
                 _connectionState.value = RealtimeConnectionState.Disconnected
                 scheduleReconnect()
@@ -223,6 +226,10 @@ class SocketChatRealtimeClient(
                 runCatching { socketEventParser.parseReady(raw) }
                     .onSuccess { readyEvent ->
                         log.d { "socket ready for userId=${readyEvent.userId}" }
+                        RealtimeTransportClock.recordSocketReady(
+                            userId = readyEvent.userId,
+                            socketId = null,
+                        )
                         _connectionState.value = RealtimeConnectionState.Ready(readyEvent.userId)
                         _events.emit(readyEvent)
                     }

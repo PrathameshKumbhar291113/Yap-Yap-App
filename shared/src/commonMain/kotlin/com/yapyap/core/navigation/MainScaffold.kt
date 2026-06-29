@@ -2,8 +2,10 @@ package com.yapyap.core.navigation
 
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -32,10 +34,12 @@ fun MainScaffold(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        contentWindowInsets = YapInsets.content,
+        contentWindowInsets = YapInsets.scaffoldContent,
         bottomBar = {
             if (showBottomBar) {
-                NavigationBar {
+                NavigationBar(
+                    windowInsets = YapInsets.bottomNavigationBar,
+                ) {
                     NavigationBarItem(
                         selected = currentRoute == Route.CONVERSATIONS,
                         onClick = {
@@ -51,9 +55,21 @@ fun MainScaffold(
                             YapIcon(
                                 resource = YapDrawable.Chat,
                                 contentDescription = stringResource(Res.string.tab_chats),
+                                tint = if (currentRoute == Route.CONVERSATIONS) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
                             )
                         },
                         label = { Text(stringResource(Res.string.tab_chats)) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.primary,
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
                     )
                     NavigationBarItem(
                         selected = currentRoute == Route.PROFILE,
@@ -70,9 +86,21 @@ fun MainScaffold(
                             YapIcon(
                                 resource = YapDrawable.Person,
                                 contentDescription = stringResource(Res.string.tab_profile),
+                                tint = if (currentRoute == Route.PROFILE) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
                             )
                         },
                         label = { Text(stringResource(Res.string.tab_profile)) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.primary,
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
                     )
                 }
             }

@@ -57,3 +57,16 @@ android {
 if (file("google-services.json").exists()) {
     apply(plugin = libs.plugins.google.services.get().pluginId)
 }
+
+tasks.register<Exec>("adbReverseDebug") {
+    group = "android"
+    description = "Forward device localhost:8080 to the host (local debug backend)"
+    commandLine("adb", "reverse", "tcp:8080", "tcp:8080")
+    isIgnoreExitValue = true
+}
+
+afterEvaluate {
+    tasks.matching { it.name == "installDebug" }.configureEach {
+        dependsOn("adbReverseDebug")
+    }
+}

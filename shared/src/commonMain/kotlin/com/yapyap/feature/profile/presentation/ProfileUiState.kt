@@ -9,7 +9,6 @@ sealed interface ProfileUiState {
     data class Content(
         val user: User,
         val name: String,
-        val phone: String,
         val isSaving: Boolean = false,
         val saveError: String? = null,
         val saveSuccess: Boolean = false,
@@ -26,6 +25,5 @@ internal fun User.toProfileFields(): Pair<String, String> {
 internal fun ProfileUiState.Content.toProfileUpdate(): ProfileUpdate {
     return ProfileUpdate(
         name = name.trim().takeIf { it.isNotEmpty() },
-        phone = phone.trim().takeIf { it.isNotEmpty() },
     )
 }

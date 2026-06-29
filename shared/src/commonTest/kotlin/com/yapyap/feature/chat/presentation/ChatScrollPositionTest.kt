@@ -77,6 +77,7 @@ class ChatScrollPositionTest {
         isOutgoing: Boolean,
     ): MessageUiModel = MessageUiModel(
         stableKey = stableKey,
+        clientMessageId = stableKey,
         content = stableKey,
         isOutgoing = isOutgoing,
         timestamp = "12:00",

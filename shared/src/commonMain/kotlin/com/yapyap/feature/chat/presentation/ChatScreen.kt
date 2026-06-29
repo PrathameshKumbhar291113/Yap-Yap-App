@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package com.yapyap.feature.chat.presentation
 
 import androidx.compose.animation.core.RepeatMode
@@ -6,6 +8,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +23,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -47,10 +52,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.yapyap.core.di.koinViewModel
-import com.yapyap.core.theme.YapReadReceipt
 import com.yapyap.core.theme.YapSpacing
 import com.yapyap.core.ui.FullScreenError
 import com.yapyap.core.ui.YapInsets
@@ -89,15 +95,17 @@ private enum class ChatScrollMode {
 @Composable
 fun ChatScreen(
     conversationId: String?,
+    openAtLatest: Boolean = false,
     onBack: () -> Unit,
 ) {
     val parsedConversationId = conversationId?.toIntOrNull()?.takeIf { it > 0 }
     if (parsedConversationId == null) {
         Scaffold(
+            contentWindowInsets = YapInsets.screenContent,
             topBar = {
             TopAppBar(
                 title = { Text(stringResource(Res.string.chats)) },
-                windowInsets = YapInsets.topAppBar,
+                windowInsets = YapInsets.topAppBarStandalone,
                 navigationIcon = {
                         IconButton(onClick = onBack) {
                             YapIcon(
@@ -122,6 +130,7 @@ fun ChatScreen(
 
     ChatScreenContent(
         conversationId = parsedConversationId.toString(),
+        openAtLatest = openAtLatest,
         viewModel = koinViewModel(parsedConversationId),
         onBack = onBack,
     )
@@ -131,6 +140,7 @@ fun ChatScreen(
 @Composable
 private fun ChatScreenContent(
     conversationId: String,
+    openAtLatest: Boolean,
     onBack: () -> Unit,
     viewModel: ChatViewModel,
 ) {
@@ -158,11 +168,11 @@ private fun ChatScreenContent(
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
-        contentWindowInsets = YapInsets.content,
+        contentWindowInsets = YapInsets.screenContent,
         topBar = {
             TopAppBar(
                 title = { Text(titleLabel) },
-                windowInsets = YapInsets.topAppBar,
+                windowInsets = YapInsets.topAppBarStandalone,
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         YapIcon(
@@ -230,8 +240,8 @@ private fun ChatScreenContent(
                     val trailingItemCount = if (state.typingUserCount > 0) 1 else 0
                     val latestMessageKey = state.messages.lastOrNull()?.stableKey
 
-                    LaunchedEffect(state.unreadCount) {
-                        if (anchorUnreadCount == 0 && state.unreadCount > 0) {
+                    LaunchedEffect(state.unreadCount, openAtLatest) {
+                        if (!openAtLatest && anchorUnreadCount == 0 && state.unreadCount > 0) {
                             anchorUnreadCount = state.unreadCount
                         }
                     }
@@ -247,9 +257,13 @@ private fun ChatScreenContent(
                         anchorUnreadCount,
                         state.hasMore,
                         state.isLoadingOlder,
+                        openAtLatest,
                     ) {
                         if (initialScrollDone || state.messages.isEmpty()) return@LaunchedEffect
-                        if (needsOlderMessagesForUnread(state.messages, anchorUnreadCount, state.hasMore)) {
+                        if (
+                            !openAtLatest &&
+                            needsOlderMessagesForUnread(state.messages, anchorUnreadCount, state.hasMore)
+                        ) {
                             if (!state.isLoadingOlder) {
                                 viewModel.loadOlderMessages()
                             }
@@ -264,16 +278,24 @@ private fun ChatScreenContent(
                         trailingItemCount,
                         state.hasMore,
                         state.isLoadingOlder,
+                        openAtLatest,
                     ) {
                         if (initialScrollDone || state.messages.isEmpty() || listItems.isEmpty()) {
                             return@LaunchedEffect
                         }
-                        if (needsOlderMessagesForUnread(state.messages, anchorUnreadCount, state.hasMore)) {
+                        if (
+                            !openAtLatest &&
+                            needsOlderMessagesForUnread(state.messages, anchorUnreadCount, state.hasMore)
+                        ) {
                             return@LaunchedEffect
                         }
                         if (state.isLoadingOlder) return@LaunchedEffect
 
-                        val unreadForAnchor = anchorUnreadCount.takeIf { it > 0 } ?: state.unreadCount
+                        val unreadForAnchor = if (openAtLatest) {
+                            0
+                        } else {
+                            anchorUnreadCount.takeIf { it > 0 } ?: state.unreadCount
+                        }
                         val listItemIndex = if (unreadForAnchor > 0) {
                             findFirstUnreadListIndex(listItems, state.messages, unreadForAnchor)
                         } else {
@@ -293,6 +315,9 @@ private fun ChatScreenContent(
                             ChatScrollMode.PinnedToBottom
                         }
                         lastAutoScrollKey = latestMessageKey
+                        if (openAtLatest) {
+                            viewModel.onReachedBottom()
+                        }
                     }
 
                     LaunchedEffect(state.unreadCount) {
@@ -329,13 +354,17 @@ private fun ChatScreenContent(
                             }
                     }
 
-                    LaunchedEffect(latestMessageKey, scrollMode, listItems.size, trailingItemCount) {
+                    LaunchedEffect(latestMessageKey, scrollMode, listItems.size, trailingItemCount, openAtLatest) {
                         if (!initialScrollDone || latestMessageKey == null) return@LaunchedEffect
-                        if (scrollMode != ChatScrollMode.PinnedToBottom) return@LaunchedEffect
+                        if (scrollMode != ChatScrollMode.PinnedToBottom && !openAtLatest) return@LaunchedEffect
                         if (latestMessageKey == lastAutoScrollKey) return@LaunchedEffect
                         val listItemIndex = findLatestMessageListIndex(listItems, latestMessageKey)
                         listState.animateScrollToItem(listIndexToLazyIndex(listItemIndex))
                         lastAutoScrollKey = latestMessageKey
+                        if (openAtLatest) {
+                            scrollMode = ChatScrollMode.PinnedToBottom
+                            viewModel.onReachedBottom()
+                        }
                     }
 
                     LaunchedEffect(state.typingUserCount, scrollMode, trailingItemCount, listItems.size) {
@@ -387,7 +416,15 @@ private fun ChatScreenContent(
                         items(listItems, key = { it.key }) { item ->
                             when (item) {
                                 is ChatListItem.DateSeparator -> DateSeparatorChip(label = item.label)
-                                is ChatListItem.MessageItem -> MessageBubble(message = item.message)
+                                is ChatListItem.MessageItem -> MessageBubble(
+                                    message = item.message,
+                                    onRetry = item.message.clientMessageId?.let { id ->
+                                        { viewModel.retryMessage(id) }
+                                    },
+                                    onDelete = item.message.clientMessageId?.let { id ->
+                                        { viewModel.deleteMessage(id) }
+                                    },
+                                )
                             }
                         }
 
@@ -501,9 +538,16 @@ private fun DateSeparatorChip(label: String) {
 }
 
 @Composable
-private fun MessageBubble(message: MessageUiModel) {
+private fun MessageBubble(
+    message: MessageUiModel,
+    onRetry: (() -> Unit)? = null,
+    onDelete: (() -> Unit)? = null,
+) {
     val fallback = stringResource(Res.string.message_fallback)
     val displayContent = message.content.ifBlank { fallback }
+    val clipboardManager = LocalClipboardManager.current
+    var menuExpanded by remember { mutableStateOf(false) }
+    val canManageFailed = message.isFailed && message.isOutgoing
 
     Row(
         modifier = Modifier
@@ -527,9 +571,21 @@ private fun MessageBubble(message: MessageUiModel) {
                     )
                     .background(
                         if (message.isOutgoing) {
-                            MaterialTheme.colorScheme.primaryContainer
+                            MaterialTheme.colorScheme.primary
                         } else {
-                            MaterialTheme.colorScheme.surface
+                            MaterialTheme.colorScheme.surfaceVariant
+                        },
+                    )
+                    .combinedClickable(
+                        onClick = {
+                            if (canManageFailed) {
+                                onRetry?.invoke()
+                            }
+                        },
+                        onLongClick = {
+                            if (message.isOutgoing) {
+                                menuExpanded = true
+                            }
                         },
                     )
                     .padding(horizontal = YapSpacing.sm - YapSpacing.xxs, vertical = YapSpacing.xs),
@@ -537,6 +593,41 @@ private fun MessageBubble(message: MessageUiModel) {
                 Text(
                     text = displayContent,
                     style = MaterialTheme.typography.bodyLarge,
+                    color = if (message.isOutgoing) {
+                        MaterialTheme.colorScheme.onPrimary
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
+                )
+            }
+            DropdownMenu(
+                expanded = menuExpanded,
+                onDismissRequest = { menuExpanded = false },
+            ) {
+                if (canManageFailed) {
+                    DropdownMenuItem(
+                        text = { Text("Retry") },
+                        onClick = {
+                            menuExpanded = false
+                            onRetry?.invoke()
+                        },
+                    )
+                }
+                if (canManageFailed) {
+                    DropdownMenuItem(
+                        text = { Text("Delete") },
+                        onClick = {
+                            menuExpanded = false
+                            onDelete?.invoke()
+                        },
+                    )
+                }
+                DropdownMenuItem(
+                    text = { Text("Copy") },
+                    onClick = {
+                        menuExpanded = false
+                        clipboardManager.setText(AnnotatedString(displayContent))
+                    },
                 )
             }
             Row(
@@ -566,20 +657,45 @@ private fun ReadReceiptIndicator(
 ) {
     val tint = when {
         isFailed -> MaterialTheme.colorScheme.error
-        receipt == ReadReceiptVisual.Read -> YapReadReceipt
+        receipt == ReadReceiptVisual.Read -> MaterialTheme.colorScheme.tertiary
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
-    val symbol = when (receipt) {
-        ReadReceiptVisual.Pending -> "…"
-        ReadReceiptVisual.Failed -> "!"
-        ReadReceiptVisual.Sent -> "✓"
-        ReadReceiptVisual.Delivered -> "✓✓"
-        ReadReceiptVisual.Read -> "✓✓"
+    when (receipt) {
+        ReadReceiptVisual.Sending -> SendingIndicator(tint = tint)
+        else -> {
+            val symbol = when (receipt) {
+                ReadReceiptVisual.Queued -> "🕐"
+                ReadReceiptVisual.Failed -> "!"
+                ReadReceiptVisual.Sent -> "✓"
+                ReadReceiptVisual.Delivered -> "✓✓"
+                ReadReceiptVisual.Read -> "✓✓"
+                ReadReceiptVisual.Sending -> "…"
+            }
+            Text(
+                text = symbol,
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                color = tint,
+            )
+        }
     }
+}
+
+@Composable
+private fun SendingIndicator(tint: Color) {
+    val transition = rememberInfiniteTransition(label = "sending_indicator")
+    val alpha by transition.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 700),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "sending_alpha",
+    )
     Text(
-        text = symbol,
+        text = "…",
         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-        color = tint,
+        color = tint.copy(alpha = alpha),
     )
 }
 

@@ -2,6 +2,7 @@ package com.yapyap.feature.conversations.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.yapyap.core.diagnostics.ReceiverSyncTrace
 import com.yapyap.feature.conversations.domain.usecase.GetConversationsUseCase
 import com.yapyap.feature.conversations.domain.usecase.StartDirectChatUseCase
 import com.yapyap.core.util.UserMessages
@@ -48,15 +49,29 @@ class ConversationsViewModel(
 
     fun refresh() {
         viewModelScope.launch {
+            ReceiverSyncTrace.stage(
+                stage = "CONVERSATIONS_UI_REFRESH_BEGIN",
+                trigger = "ConversationsViewModel.refresh",
+            )
             isRefreshing.value = true
             errorMessage.value = null
             getConversationsUseCase.refresh()
                 .onSuccess {
                     isRefreshing.value = false
+                    ReceiverSyncTrace.stage(
+                        stage = "CONVERSATIONS_UI_REFRESH_DONE",
+                        trigger = "ConversationsViewModel.refresh",
+                        extra = mapOf("uiRecomposed" to "pending_flow_collect"),
+                    )
                 }
                 .onFailure { error ->
                     isRefreshing.value = false
                     errorMessage.value = error.toUserMessage(UserMessages.LOAD_CONVERSATIONS_FAILED)
+                    ReceiverSyncTrace.stage(
+                        stage = "CONVERSATIONS_UI_REFRESH_FAILED",
+                        trigger = "ConversationsViewModel.refresh",
+                        extra = mapOf("error" to error.message),
+                    )
                 }
         }
     }

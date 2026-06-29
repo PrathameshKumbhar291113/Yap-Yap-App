@@ -8,6 +8,6 @@ import org.koin.dsl.module
 expect val platformModule: Module
 
 val coreModule = module {
-    includes(platformModule)
+    includes(platformModule, databaseModule, networkConnectivityMonitorModule())
     single<DispatcherProvider> { DefaultDispatcherProvider() }
 }

@@ -35,13 +35,14 @@ final class YapPushManager: NSObject {
         IosPushBridge.shared.registerDeleteTokenHandler { [weak self] in
             self?.deleteToken()
         }
-        IosPushBridge.shared.registerShowNotificationHandler { title, body, payloadJson, threadId, identifier in
+        IosPushBridge.shared.registerShowNotificationHandler { title, body, payloadJson, threadId, identifier, summaryArgument in
             YapPushManager.shared.showLocalNotification(
                 title: title,
                 body: body,
                 payloadJson: payloadJson,
                 threadId: threadId,
-                identifier: identifier
+                identifier: identifier,
+                summaryArgument: summaryArgument
             )
         }
         IosPushBridge.shared.registerDismissNotificationHandler { threadId in
@@ -139,7 +140,8 @@ final class YapPushManager: NSObject {
         body: String,
         payloadJson: String,
         threadId: String?,
-        identifier: String?
+        identifier: String?,
+        summaryArgument: String?
     ) {
         UNUserNotificationCenter.current().getNotificationSettings { settings in
             let allowed: Bool
@@ -157,6 +159,9 @@ final class YapPushManager: NSObject {
             content.sound = .default
             if let threadId, !threadId.isEmpty {
                 content.threadIdentifier = threadId
+            }
+            if let summaryArgument, !summaryArgument.isEmpty {
+                content.summaryArgument = summaryArgument
             }
             if let data = payloadJson.data(using: .utf8),
                let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {

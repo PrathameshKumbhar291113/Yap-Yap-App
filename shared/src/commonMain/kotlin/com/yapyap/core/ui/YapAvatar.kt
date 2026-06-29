@@ -13,6 +13,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 @Composable
 fun YapAvatar(
@@ -21,6 +22,8 @@ fun YapAvatar(
     size: Dp = 48.dp,
 ) {
     val initials = label.toAvatarInitials()
+    val fontSize = (size.value * 0.34f).sp
+
     Box(
         modifier = modifier
             .size(size)
@@ -30,7 +33,10 @@ fun YapAvatar(
     ) {
         Text(
             text = initials,
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+            style = MaterialTheme.typography.titleMedium.copy(
+                fontWeight = FontWeight.SemiBold,
+                fontSize = fontSize,
+            ),
             color = MaterialTheme.colorScheme.onPrimaryContainer,
         )
     }

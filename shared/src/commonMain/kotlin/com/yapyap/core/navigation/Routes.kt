@@ -26,7 +26,11 @@ sealed class YapYapRoute {
     data object Profile : YapYapRoute()
 
     @Serializable
-    data class Chat(val conversationId: String) : YapYapRoute()
+    data class Chat(
+        val conversationId: String,
+        /** When true (notification/deep link), open pinned to the latest message instead of first unread. */
+        val openAtLatest: Boolean = false,
+    ) : YapYapRoute()
 }
 
 /** String routes for Navigation Compose (type-safe [YapYapRoute] maps here). */

@@ -52,31 +52,29 @@ The seed script is idempotent (`ON CONFLICT` upserts) — safe to re-run.
 
 ## 3. Run the app (debug)
 
-Build and run a **debug** build. Debug uses the local backend URLs from `gradle.properties`:
+Build and run a **debug** build. Debug uses one local backend URL per platform from `gradle.properties` — no separate emulator vs physical URLs and no LAN IP baked in at build time.
 
 | Platform | API (`BASE_URL`) | Socket (`SOCKET_URL`) |
 |----------|------------------|------------------------|
-| **Android emulator** | `http://10.0.2.2:8080` | `http://10.0.2.2:8080` |
+| **Android** (emulator or USB device) | `http://127.0.0.1:8080` | `http://127.0.0.1:8080` |
 | **iOS Simulator** | `http://localhost:8080` | `http://localhost:8080` |
-| **Physical Android / iPhone** (same Wi‑Fi as laptop) | `http://<laptop-lan-ip>:8080` | `http://<laptop-lan-ip>:8080` |
 
-Debug builds pick emulator/simulator vs physical URLs **at runtime**. Physical devices use your Mac’s LAN IP, auto-detected when Gradle builds the app. Override in `local.properties` if needed:
+**Android:** `installDebug` runs `adb reverse tcp:8080 tcp:8080` so the device’s `127.0.0.1:8080` reaches your laptop’s backend. If you sideload an APK manually, run `./scripts/adb-reverse-debug.sh` once per USB connection.
+
+**iOS physical device:** `localhost` on the phone is the phone itself. Override in `local.properties` when testing on a real iPhone over Wi‑Fi:
 
 ```properties
-LAN_HOST=192.168.1.42
-# or full URL:
-# yapyap.baseUrl=http://192.168.1.42:8080
+API_BASE_URL_IOS=http://192.168.1.42:8080/api
+SOCKET_URL_IOS=http://192.168.1.42:8080
 ```
-
-Override order for virtual URLs: `gradle.properties` → built-in defaults. For physical URLs: `yapyap.baseUrl` → `LAN_HOST` → auto-detect → fallback.
 
 **Release builds** always use **`https://yapyap-backend.onrender.com`** for both API and Socket.IO.
 
 ```properties
 # gradle.properties (debug defaults)
-API_BASE_URL_ANDROID=http://10.0.2.2:8080/api
+API_BASE_URL_ANDROID=http://127.0.0.1:8080/api
 API_BASE_URL_IOS=http://localhost:8080/api
-SOCKET_URL_ANDROID=http://10.0.2.2:8080
+SOCKET_URL_ANDROID=http://127.0.0.1:8080
 SOCKET_URL_IOS=http://localhost:8080
 ```
 
@@ -141,7 +139,8 @@ Use two clients for realtime tests (e.g. Android emulator + iOS Simulator, or tw
 | Empty conversation list after seed | Log in as Alice or Bob; seed creates membership for those users only |
 | Socket never connects (Android) | Confirm `JWT` in handshake; check Logcat for `YapYap` / Ktor logs |
 | Socket never connects (iOS) | Confirm Debug build; token passed in connect payload; check Xcode console |
-| iOS can't reach localhost | Use Debug scheme (`Info-Debug.plist` ATS exception); physical device needs host IP |
+| iOS can't reach localhost | Use Debug scheme (`Info-Debug.plist` ATS exception); physical iPhone needs host IP in `local.properties` |
+| Android physical device network error | Run `./scripts/adb-reverse-debug.sh` (or reinstall via `installDebug`) with USB connected |
 
 ## Related
 

@@ -1,6 +1,8 @@
 package com.yapyap.feature.conversations.data.repository
 
 import com.yapyap.core.realtime.MessageDeliveryAcknowledgementGateway
+import com.yapyap.core.diagnostics.OutboxPipelineTrace
+import com.yapyap.core.diagnostics.ReceiverSyncTrace
 import com.yapyap.core.network.getOrThrow
 import com.yapyap.feature.chat.domain.entity.Message
 import com.yapyap.feature.chat.domain.entity.MessageType
@@ -22,13 +24,41 @@ class ConversationRepositoryImpl(
     override fun observeConversations(): Flow<List<Conversation>> = _conversations.asStateFlow()
 
     override suspend fun refreshConversations(): Result<Unit> {
+        ReceiverSyncTrace.stage(
+            stage = "REFRESH_CONVERSATIONS_BEGIN",
+            trigger = "ConversationRepositoryImpl.refreshConversations",
+            extra = mapOf("endpoint" to "GET /api/conversations"),
+        )
         return runCatching {
             val items = conversationApi.getConversations().getOrThrow()
             val conversations = sortByLatest(items.map { it.toDomain() })
+            val previousCount = _conversations.value.size
             _conversations.value = conversations
+            val latestServerMessageIds = conversations
+                .mapNotNull { conversation ->
+                    conversation.lastMessage?.id?.let { conversation.id to it }
+                }
+                .joinToString(";") { (conversationId, messageId) -> "$conversationId:$messageId" }
+            ReceiverSyncTrace.stage(
+                stage = "REFRESH_CONVERSATIONS_DONE",
+                trigger = "ConversationRepositoryImpl.refreshConversations",
+                extra = mapOf(
+                    "conversationCount" to conversations.size.toString(),
+                    "previousCount" to previousCount.toString(),
+                    "conversationListUpdated" to "true",
+                    "latestServerMessageIds" to latestServerMessageIds,
+                    "repositoryUpdated" to "true",
+                ),
+            )
             deliveryAckService.ackConversationSummaries(
                 conversations = conversations,
                 trigger = "ConversationRepositoryImpl.refreshConversations",
+            )
+        }.onFailure { error ->
+            ReceiverSyncTrace.stage(
+                stage = "REFRESH_CONVERSATIONS_FAILED",
+                trigger = "ConversationRepositoryImpl.refreshConversations",
+                extra = mapOf("error" to error.message),
             )
         }
     }
@@ -44,6 +74,8 @@ class ConversationRepositoryImpl(
             conversation
         }
     }
+
+    override fun snapshotConversations(): List<Conversation> = _conversations.value
 
     override fun applyConversationRead(conversationId: Int) {
         val current = _conversations.value
@@ -97,6 +129,16 @@ class ConversationRepositoryImpl(
         )
 
         _conversations.value = sortByLatest(listOf(updated) + current.filterNot { it.id == conversationId })
+        OutboxPipelineTrace.stage(
+            stage = "CONVERSATION_REPOSITORY_UPDATED",
+            serverMessageId = messageId,
+            conversationId = conversationId,
+            extra = mapOf(
+                "wasUnknown" to wasUnknown.toString(),
+                "isFromSelf" to isFromSelf.toString(),
+                "unreadCount" to unreadCount.toString(),
+            ),
+        )
         return wasUnknown
     }
 

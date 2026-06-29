@@ -2,8 +2,6 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 import com.codingfeline.buildkonfig.compiler.FieldSpec.Type.BOOLEAN
 import com.codingfeline.buildkonfig.compiler.FieldSpec.Type.STRING
-import java.net.Inet4Address
-import java.net.NetworkInterface
 import java.util.Properties
 
 plugins {
@@ -13,6 +11,15 @@ plugins {
     alias(libs.plugins.composeCompiler)
     alias(libs.plugins.kotlinSerialization)
     alias(libs.plugins.buildkonfig)
+    alias(libs.plugins.sqldelight)
+}
+
+sqldelight {
+    databases {
+        create("YapYapDatabase") {
+            packageName.set("com.yapyap.core.database")
+        }
+    }
 }
 
 if (findProperty("buildkonfig.flavor") == null) {
@@ -38,42 +45,8 @@ fun readYapProperty(key: String): String? {
 /** Ktor paths already include `/api/...`; strip a trailing `/api` if present in gradle.properties. */
 fun normalizeApiHost(url: String): String = url.trimEnd('/').removeSuffix("/api")
 
-fun detectLanHost(): String {
-    try {
-        val interfaces = NetworkInterface.getNetworkInterfaces() ?: return "http://192.168.0.1:8080"
-        while (interfaces.hasMoreElements()) {
-            val networkInterface = interfaces.nextElement()
-            if (!networkInterface.isUp || networkInterface.isLoopback || networkInterface.isVirtual) continue
-            val addresses = networkInterface.inetAddresses
-            while (addresses.hasMoreElements()) {
-                val address = addresses.nextElement()
-                if (address is Inet4Address && !address.isLoopbackAddress) {
-                    val host = address.hostAddress
-                    if (host != null && !host.startsWith("169.254")) {
-                        return "http://$host:8080"
-                    }
-                }
-            }
-        }
-    } catch (_: Exception) {
-        // Fall through to default.
-    }
-    return "http://192.168.0.1:8080"
-}
-
-fun normalizePhysicalHost(raw: String): String {
-    val trimmed = raw.trim()
-    return if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-        normalizeApiHost(trimmed)
-    } else {
-        "http://${trimmed.trim('/')}:8080"
-    }
-}
-
-val legacyPhysicalHostOverride = readYapProperty("yapyap.baseUrl")
-
 val debugApiHostAndroid = normalizeApiHost(
-    readYapProperty("API_BASE_URL_ANDROID") ?: "http://10.0.2.2:8080",
+    readYapProperty("API_BASE_URL_ANDROID") ?: "http://127.0.0.1:8080",
 )
 val debugApiHostIos = normalizeApiHost(
     readYapProperty("API_BASE_URL_IOS") ?: "http://localhost:8080",
@@ -84,13 +57,6 @@ val debugSocketHostAndroid = (
 val debugSocketHostIos = (
     readYapProperty("SOCKET_URL_IOS") ?: debugApiHostIos
     ).trimEnd('/')
-val debugPhysicalHost = normalizeApiHost(
-    legacyPhysicalHostOverride
-        ?: readYapProperty("LAN_HOST")?.let(::normalizePhysicalHost)
-        ?: readYapProperty("API_BASE_URL_PHYSICAL")?.let { normalizeApiHost(it) }
-        ?: detectLanHost(),
-)
-val debugPhysicalSocketHost = debugPhysicalHost.trimEnd('/')
 
 buildkonfig {
     packageName = "com.yapyap.core.config"
@@ -99,11 +65,8 @@ buildkonfig {
     defaultConfigs {
         buildConfigField(STRING, "BASE_URL", yapProductionBaseUrl)
         buildConfigField(STRING, "SOCKET_URL", yapProductionBaseUrl)
-        buildConfigField(STRING, "DEBUG_VIRTUAL_BASE_URL", yapProductionBaseUrl)
-        buildConfigField(STRING, "DEBUG_VIRTUAL_SOCKET_URL", yapProductionBaseUrl)
-        buildConfigField(STRING, "DEBUG_PHYSICAL_BASE_URL", yapProductionBaseUrl)
-        buildConfigField(STRING, "DEBUG_PHYSICAL_SOCKET_URL", yapProductionBaseUrl)
         buildConfigField(BOOLEAN, "IS_DEBUG", "false")
+        buildConfigField(STRING, "APP_VERSION", "1.0")
     }
 
     defaultConfigs("debug") {
@@ -120,19 +83,11 @@ buildkonfig {
         create("android") {
             buildConfigField(STRING, "BASE_URL", debugApiHostAndroid)
             buildConfigField(STRING, "SOCKET_URL", debugSocketHostAndroid)
-            buildConfigField(STRING, "DEBUG_VIRTUAL_BASE_URL", debugApiHostAndroid)
-            buildConfigField(STRING, "DEBUG_VIRTUAL_SOCKET_URL", debugSocketHostAndroid)
-            buildConfigField(STRING, "DEBUG_PHYSICAL_BASE_URL", debugPhysicalHost)
-            buildConfigField(STRING, "DEBUG_PHYSICAL_SOCKET_URL", debugPhysicalSocketHost)
         }
         listOf("iosArm64", "iosSimulatorArm64").forEach { iosTarget ->
             create(iosTarget) {
                 buildConfigField(STRING, "BASE_URL", debugApiHostIos)
                 buildConfigField(STRING, "SOCKET_URL", debugSocketHostIos)
-                buildConfigField(STRING, "DEBUG_VIRTUAL_BASE_URL", debugApiHostIos)
-                buildConfigField(STRING, "DEBUG_VIRTUAL_SOCKET_URL", debugSocketHostIos)
-                buildConfigField(STRING, "DEBUG_PHYSICAL_BASE_URL", debugPhysicalHost)
-                buildConfigField(STRING, "DEBUG_PHYSICAL_SOCKET_URL", debugPhysicalSocketHost)
             }
         }
     }
@@ -203,9 +158,14 @@ kotlin {
             implementation(libs.multiplatform.settings.no.arg)
             implementation(libs.kermit)
             implementation(libs.kotlinx.datetime)
+            implementation(libs.sqldelight.coroutines)
+        }
+        androidMain.dependencies {
+            implementation(libs.sqldelight.android.driver)
         }
         iosMain.dependencies {
             implementation(libs.ktor.client.darwin)
+            implementation(libs.sqldelight.native.driver)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)

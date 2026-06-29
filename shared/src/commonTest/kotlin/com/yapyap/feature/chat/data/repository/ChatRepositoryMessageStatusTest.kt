@@ -125,10 +125,9 @@ class ChatRepositoryMessageStatusTest {
                 json(com.yapyap.core.network.appJson)
             }
         }
-        return ChatRepositoryImpl(
+        return createTestChatRepository(
             chatApi = ChatApi(httpClient),
             chatRealtimeClient = NoopChatRealtimeClient,
-            deliveryAckService = NoopMessageDeliveryAcknowledgementGateway,
         )
     }
 

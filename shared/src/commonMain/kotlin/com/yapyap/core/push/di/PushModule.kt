@@ -1,6 +1,8 @@
 package com.yapyap.core.push.di
 
 import com.yapyap.core.realtime.MessageDeliveryAcknowledgementGateway
+import com.yapyap.core.realtime.ChatRealtimeClient
+import com.yapyap.core.push.ConversationNotificationStore
 import com.yapyap.core.push.PushMessageDeduplicator
 import com.yapyap.core.push.PushNavigationRouter
 import com.yapyap.core.push.PushNotificationCoordinator
@@ -13,6 +15,7 @@ val pushModule = module {
     single { DeviceApi(get()) }
     single { DeviceRepository(get()) }
     single { PushMessageDeduplicator() }
+    single { ConversationNotificationStore() }
     single { PushNavigationRouter() }
     single {
         PushNotificationCoordinator(
@@ -27,6 +30,9 @@ val pushModule = module {
             chatRepository = get(),
             incomingMessageNotifier = get(),
             deliveryAckService = get(),
+            chatRealtimeClient = get(),
+            receiverRepairGateway = lazy { get() },
+            notificationStore = get(),
             dispatcherProvider = get(),
         )
     }

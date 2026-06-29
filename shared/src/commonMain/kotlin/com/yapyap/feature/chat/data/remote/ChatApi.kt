@@ -24,12 +24,14 @@ class ChatApi(
     suspend fun getMessages(
         conversationId: Int,
         cursor: Int? = null,
+        after: Int? = null,
         limit: Int = DEFAULT_LIMIT,
     ): ApiResult<MessagesPageDto> {
         return safeApiCall {
             val response = httpClient.get("/api/conversations/$conversationId/messages") {
                 parameter("limit", limit)
                 cursor?.let { parameter("cursor", it) }
+                after?.let { parameter("after", it) }
             }
             val apiResponse = response.body<ApiResponse<MessagesPageDto>>()
             if (!response.status.isSuccess()) {

@@ -14,6 +14,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.yapyap.core.diagnostics.RuntimeDiagnostics
+import com.yapyap.core.push.AndroidPushRuntimeTrace
 import com.yapyap.core.push.PushIntentParser
 import com.yapyap.core.push.PushNotificationCoordinator
 import com.yapyap.core.session.SessionManager
@@ -43,10 +44,12 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        RuntimeDiagnostics.enter("Lifecycle", "MainActivity.onCreate")
+        AndroidPushRuntimeTrace.dumpIntent("Lifecycle", "MainActivity.onCreate.intent", intent)
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
-        handleNotificationIntent(intent)
+        handleNotificationIntent(intent, source = "onCreate")
 
         setContent {
             YapYapApp()
@@ -58,9 +61,11 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onNewIntent(intent: Intent) {
+        RuntimeDiagnostics.enter("Lifecycle", "MainActivity.onNewIntent")
+        AndroidPushRuntimeTrace.dumpIntent("Lifecycle", "MainActivity.onNewIntent.intent", intent)
         super.onNewIntent(intent)
         setIntent(intent)
-        handleNotificationIntent(intent)
+        handleNotificationIntent(intent, source = "onNewIntent")
     }
 
     override fun onResume() {
@@ -115,8 +120,28 @@ class MainActivity : ComponentActivity() {
         startActivity(intent)
     }
 
-    private fun handleNotificationIntent(intent: Intent?) {
-        val data = PushIntentParser.parse(intent) ?: return
+    private fun handleNotificationIntent(intent: Intent?, source: String) {
+        RuntimeDiagnostics.enter("Lifecycle", "MainActivity.handleNotificationIntent", "source=$source")
+        val data = PushIntentParser.parse(intent)
+        if (data == null) {
+            RuntimeDiagnostics.event(
+                "Lifecycle",
+                "MainActivity.handleNotificationIntent SKIP reason=parse_returned_null source=$source " +
+                    "action=${intent?.action} categories=${intent?.categories}",
+            )
+            if (intent?.action == Intent.ACTION_MAIN) {
+                RuntimeDiagnostics.event(
+                    "Notification",
+                    "SYSTEM_NOTIFICATION_ONLY candidate=launcher_intent_without_push_extras source=$source",
+                )
+            }
+            RuntimeDiagnostics.stack("Lifecycle", "handleNotificationIntent_null")
+            return
+        }
+        RuntimeDiagnostics.event(
+            "Lifecycle",
+            "MainActivity.handleNotificationIntent PARSED data=$data source=$source",
+        )
         pushNotificationCoordinator.handleNotificationOpened(data)
     }
 }

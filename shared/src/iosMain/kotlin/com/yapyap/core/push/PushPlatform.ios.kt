@@ -14,7 +14,7 @@ object IosPushBridge {
     private var requestPermissionHandler: (() -> Unit)? = null
     private var getTokenHandler: (() -> Unit)? = null
     private var deleteTokenHandler: (() -> Unit)? = null
-    private var showNotificationHandler: ((String, String, String, String?, String?) -> Unit)? = null
+    private var showNotificationHandler: ((String, String, String, String?, String?, String?) -> Unit)? = null
     private var dismissNotificationHandler: ((String) -> Unit)? = null
 
     fun registerRequestPermissionHandler(handler: () -> Unit) {
@@ -29,7 +29,7 @@ object IosPushBridge {
         deleteTokenHandler = handler
     }
 
-    fun registerShowNotificationHandler(handler: (String, String, String, String?, String?) -> Unit) {
+    fun registerShowNotificationHandler(handler: (String, String, String, String?, String?, String?) -> Unit) {
         showNotificationHandler = handler
     }
 
@@ -55,8 +55,9 @@ object IosPushBridge {
         payloadJson: String,
         threadId: String?,
         notificationIdentifier: String?,
+        summaryArgument: String?,
     ) {
-        showNotificationHandler?.invoke(title, body, payloadJson, threadId, notificationIdentifier)
+        showNotificationHandler?.invoke(title, body, payloadJson, threadId, notificationIdentifier, summaryArgument)
     }
 
     fun dismissNotification(identifier: String) {
@@ -115,12 +116,17 @@ class IosPushPlatform : PushPlatform {
             """"$key":"${value.replace("\"", "\\\"")}""""
         }
         val identifier = notification.tag ?: notification.conversationId?.let { "conv_$it" }
+        val body = notification.messageHistory
+            .takeIf { it.isNotEmpty() }
+            ?.joinToString(separator = "\n") { it.text }
+            ?: notification.body
         IosPushBridge.showNotification(
             title = notification.title,
-            body = notification.body,
+            body = body,
             payloadJson = payloadJson,
             threadId = notification.threadId,
             notificationIdentifier = identifier,
+            summaryArgument = notification.title,
         )
     }
 

@@ -3,6 +3,7 @@ package com.yapyap.core.push
 import co.touchlab.kermit.Logger
 import com.yapyap.core.diagnostics.RuntimeDiagnostics
 import com.yapyap.core.datastore.TokenStorage
+import com.yapyap.core.push.model.LocalPushNotification
 import com.yapyap.core.push.model.PushDeliveryContext
 import com.yapyap.core.push.model.PushDeliveryMode
 import com.yapyap.core.push.model.PushInboundMessage
@@ -10,9 +11,13 @@ import com.yapyap.core.push.model.PushMessageType
 import com.yapyap.core.push.model.PushNavigationTarget
 import com.yapyap.core.push.model.PushPermissionStatus
 import com.yapyap.core.realtime.ActiveConversationTracker
+import com.yapyap.core.realtime.ChatRealtimeClient
 import com.yapyap.core.realtime.IncomingMessageNotification
 import com.yapyap.core.realtime.IncomingMessageNotifier
 import com.yapyap.core.realtime.MessageDeliveryAcknowledgementGateway
+import com.yapyap.core.realtime.reconcile.ReceiverRepairGateway
+import com.yapyap.core.realtime.reconcile.ReceiverRepairService
+import com.yapyap.core.realtime.shouldAckInboundMessage
 import com.yapyap.core.util.DispatcherProvider
 import com.yapyap.feature.auth.domain.model.AuthState
 import com.yapyap.feature.auth.domain.usecase.ObserveAuthStateUseCase
@@ -39,6 +44,9 @@ class PushNotificationCoordinator(
     private val chatRepository: ChatRepository,
     private val incomingMessageNotifier: IncomingMessageNotifier,
     private val deliveryAckService: MessageDeliveryAcknowledgementGateway,
+    private val chatRealtimeClient: ChatRealtimeClient,
+    private val receiverRepairGateway: Lazy<ReceiverRepairGateway>,
+    private val notificationStore: ConversationNotificationStore,
     private val dispatcherProvider: DispatcherProvider,
 ) {
     private val log = Logger.withTag("PushNotifications")
@@ -48,7 +56,6 @@ class PushNotificationCoordinator(
     private var started = false
     private var lastRegisteredToken: String? = null
     private var pendingNotificationOpen: Map<String, String>? = null
-    private var pendingNavigationTarget: PushNavigationTarget? = null
 
     val navigationTargets = navigationRouter.targets
 
@@ -91,14 +98,14 @@ class PushNotificationCoordinator(
                     if (authenticated) {
                         registerDeviceWithBackend()
                         flushPendingNotificationOpenIfAuthenticated()
-                        flushPendingNavigationIfAuthenticated()
+                        navigationRouter.replayPending()
                     }
                 }
         }
         if (observeAuthStateUseCase().value is AuthState.Authenticated) {
             parentScope.launch(dispatcherProvider.default) {
                 flushPendingNotificationOpenIfAuthenticated()
-                flushPendingNavigationIfAuthenticated()
+                navigationRouter.replayPending()
             }
         }
     }
@@ -117,7 +124,7 @@ class PushNotificationCoordinator(
             pushPlatform.onAppForeground()
             if (observeAuthStateUseCase().value is AuthState.Authenticated) {
                 verifyTokenRegistration()
-                conversationRepository.refreshConversations()
+                receiverRepairGateway.value.repairAll(ReceiverRepairService.TRIGGER_FOREGROUND)
             }
         }
     }
@@ -125,7 +132,11 @@ class PushNotificationCoordinator(
     fun onAppBackground() = Unit
 
     fun onConversationOpened(conversationId: Int) {
-        pushPlatform.dismissConversationNotification(conversationId.toString())
+        val id = conversationId.toString()
+        pushPlatform.dismissConversationNotification(id)
+        scope?.launch {
+            notificationStore.clearConversation(id)
+        }
     }
 
     fun onRealtimeNewMessage(
@@ -144,9 +155,9 @@ class PushNotificationCoordinator(
                 put("preview", preview)
                 senderName?.let { put("senderName", it) }
             }
-            presentNotificationIfNeeded(
-                conversationId = conversationId,
-                payload = PushPayloadParser.parse(data),
+            val payload = PushPayloadParser.parse(data)
+            updateConversationNotification(
+                payload = payload,
                 delivery = PushDeliveryContext(mode = PushDeliveryMode.Realtime),
             )
         }
@@ -208,35 +219,37 @@ class PushNotificationCoordinator(
     }
 
     fun handleNotificationOpened(data: Map<String, String>) {
+        RuntimeDiagnostics.enter(
+            "PushCoordinator",
+            "PushNotificationCoordinator.handleNotificationOpened",
+            "NOTIFICATION_TAPPED dataKeys=${data.keys.sorted()} data=$data",
+        )
         pendingNotificationOpen = data
         val activeScope = scope ?: return
         activeScope.launch { flushPendingNotificationOpenIfAuthenticated() }
     }
 
     private suspend fun flushPendingNotificationOpenIfAuthenticated() {
-        if (observeAuthStateUseCase().value !is AuthState.Authenticated) return
+        RuntimeDiagnostics.enter("PushCoordinator", "flushPendingNotificationOpenIfAuthenticated")
+        if (observeAuthStateUseCase().value !is AuthState.Authenticated) {
+            RuntimeDiagnostics.event("PushCoordinator", "flushPendingNotificationOpen SKIP reason=not_authenticated")
+            return
+        }
         val data = pendingNotificationOpen ?: return
         pendingNotificationOpen = null
         handlePushData(data, fromUserTap = true)
     }
 
-    private fun flushPendingNavigationIfAuthenticated() {
-        if (observeAuthStateUseCase().value !is AuthState.Authenticated) return
-        val target = pendingNavigationTarget ?: return
-        pendingNavigationTarget = null
+    private fun requestNavigation(target: PushNavigationTarget) {
         navigationRouter.navigate(target)
     }
 
-    private fun requestNavigation(target: PushNavigationTarget) {
-        if (observeAuthStateUseCase().value is AuthState.Authenticated) {
-            pendingNavigationTarget = null
-            navigationRouter.navigate(target)
-        } else {
-            pendingNavigationTarget = target
-        }
-    }
-
     private suspend fun handleInboundPush(message: PushInboundMessage, fromUserTap: Boolean) {
+        RuntimeDiagnostics.enter(
+            "PushCoordinator",
+            "PushNotificationCoordinator.handleInboundPush",
+            "fromUserTap=$fromUserTap mode=${message.delivery.mode} dataKeys=${message.data.keys.sorted()}",
+        )
         handlePushData(
             data = message.data,
             delivery = message.delivery,
@@ -249,6 +262,11 @@ class PushNotificationCoordinator(
         delivery: PushDeliveryContext = PushDeliveryContext(),
         fromUserTap: Boolean = false,
     ) {
+        RuntimeDiagnostics.enter(
+            "PushCoordinator",
+            "PushNotificationCoordinator.handlePushData",
+            "fromUserTap=$fromUserTap mode=${delivery.mode} osHandled=${delivery.osNotificationHandled} data=$data",
+        )
         val payload = PushPayloadParser.parse(data)
         log.d {
             "Push received type=${payload.type.value} mode=${delivery.mode} " +
@@ -274,40 +292,96 @@ class PushNotificationCoordinator(
         delivery: PushDeliveryContext,
         fromUserTap: Boolean,
     ) {
+        RuntimeDiagnostics.enter(
+            "PushCoordinator",
+            "PushNotificationCoordinator.handleNewMessage",
+            "fromUserTap=$fromUserTap conversationId=${payload.conversationId} messageId=${payload.messageId}",
+        )
         val messageId = payload.messageId
+        val alreadySeen = messageId != null && deduplicator.hasSeen(messageId)
 
-        if (messageId != null && deduplicator.hasSeen(messageId)) {
-            if (fromUserTap) {
-                navigateToChat(payload.conversationId)
+        if (!alreadySeen) {
+            if (messageId != null) {
+                deduplicator.markSeen(messageId)
             }
-            return
+            syncIncomingPushMessage(payload, trigger = "PushNotificationCoordinator.handleNewMessage")
+        } else if (fromUserTap) {
+            RuntimeDiagnostics.event(
+                "PushCoordinator",
+                "NOTIFICATION_TAP_ACK_RETRY messageId=$messageId conversationId=${payload.conversationId}",
+            )
+            ackInboundMessage(
+                payload = payload,
+                source = "notification_tap",
+                trigger = "PushNotificationCoordinator.handleNewMessage:notification_tap",
+            )
+        } else {
+            RuntimeDiagnostics.event(
+                "PushCoordinator",
+                "MESSAGE_ALREADY_SYNCED messageId=$messageId conversationId=${payload.conversationId}",
+            )
         }
-        if (messageId != null) {
-            deduplicator.markSeen(messageId)
-        }
-
-        syncIncomingPushMessage(payload, trigger = "PushNotificationCoordinator.handleNewMessage")
 
         if (fromUserTap) {
+            val conversationIdInt = payload.conversationId?.toIntOrNull()
+            if (conversationIdInt != null) {
+                receiverRepairGateway.value.repairConversation(
+                    conversationId = conversationIdInt,
+                    trigger = ReceiverRepairService.TRIGGER_NOTIFICATION_TAP,
+                    hintServerMessageId = payload.messageId?.toIntOrNull(),
+                )
+            }
             navigateToChat(payload.conversationId)
-        } else {
-            presentNotificationIfNeeded(
-                conversationId = payload.conversationId?.toIntOrNull(),
-                payload = payload,
-                delivery = delivery,
-            )
+        } else if (!alreadySeen) {
+            updateConversationNotification(payload, delivery)
         }
     }
 
     private fun navigateToChat(conversationId: String?) {
+        RuntimeDiagnostics.enter("PushCoordinator", "navigateToChat", "conversationId=$conversationId")
         conversationId?.let { id ->
             pushPlatform.dismissConversationNotification(id)
             requestNavigation(PushNavigationTarget.Chat(id))
         }
     }
 
+    private suspend fun updateConversationNotification(
+        payload: com.yapyap.core.push.model.PushPayload,
+        delivery: PushDeliveryContext,
+        allowInAppOnIos: Boolean = false,
+    ) {
+        RuntimeDiagnostics.enter(
+            "PushCoordinator",
+            "PushNotificationCoordinator.updateConversationNotification",
+            "conversationId=${payload.conversationId} messageId=${payload.messageId} mode=${delivery.mode}",
+        )
+        val conversationId = payload.conversationId ?: return
+        val senderName = payload.senderName?.takeIf { it.isNotBlank() } ?: "New message"
+        val preview = payload.preview?.takeIf { it.isNotBlank() } ?: "You have a new message"
+        val storeState = notificationStore.appendMessage(
+            conversationId = conversationId,
+            messageId = payload.messageId,
+            senderName = senderName,
+            text = preview,
+        )
+        val showGroupSummary = notificationStore.activeConversationCount() > 1
+        val notification = storeState?.let {
+            PushNotificationContent.fromConversationState(it, payload, showGroupSummary)
+        } ?: PushNotificationContent.fromPayload(payload, showGroupSummary = showGroupSummary)
+            ?: return
+
+        presentNotificationIfNeeded(
+            conversationId = conversationId.toIntOrNull(),
+            notification = notification,
+            payload = payload,
+            delivery = delivery,
+            allowInAppOnIos = allowInAppOnIos,
+        )
+    }
+
     private suspend fun presentNotificationIfNeeded(
         conversationId: Int?,
+        notification: LocalPushNotification,
         payload: com.yapyap.core.push.model.PushPayload,
         delivery: PushDeliveryContext,
         allowInAppOnIos: Boolean = false,
@@ -322,10 +396,6 @@ class PushNotificationCoordinator(
         }
 
         val foreground = isAppInForeground()
-        val notification = PushNotificationContent.fromPayload(payload) ?: run {
-            RuntimeDiagnostics.event("PushPolicy", "SUPPRESS reason=no_notification_content")
-            return
-        }
 
         if (PushLocalNotificationPolicy.shouldSuppressLocalNotification(delivery, foreground)) {
             val reason = when {
@@ -333,6 +403,9 @@ class PushNotificationCoordinator(
                 delivery.mode == PushDeliveryMode.Realtime && !foreground ->
                     "realtime_background_android_local_tray"
                 else -> "policy_suppress"
+            }
+            if (reason == "os_notification_handled") {
+                RuntimeDiagnostics.event("Notification", "SYSTEM_NOTIFICATION_ONLY mode=${delivery.mode}")
             }
             RuntimeDiagnostics.event(
                 "PushPolicy",
@@ -373,7 +446,14 @@ class PushNotificationCoordinator(
         ) {
             RuntimeDiagnostics.event(
                 "PushPolicy",
-                "SHOW_LOCAL_TRAY conversationId=$conversationId mode=${delivery.mode} foreground=$foreground",
+                "SHOW_LOCAL_TRAY conversationId=$conversationId mode=${delivery.mode} foreground=$foreground " +
+                    "tag=${notification.tag} notificationId=${notification.notificationId} " +
+                    "messageCount=${notification.messageHistory.size}",
+            )
+            RuntimeDiagnostics.event(
+                "Notification",
+                "NOTIFICATION_UPDATED conversationId=$conversationId tag=${notification.tag} " +
+                    "notificationId=${notification.notificationId} messageId=${notification.messageId}",
             )
             pushPlatform.showLocalNotification(notification)
         } else {
@@ -388,32 +468,30 @@ class PushNotificationCoordinator(
         payload: com.yapyap.core.push.model.PushPayload,
         trigger: String,
     ) {
-        val message = payload.toIncomingMessage() ?: return
+        RuntimeDiagnostics.enter(
+            "PushCoordinator",
+            "PushNotificationCoordinator.syncIncomingPushMessage",
+            "trigger=$trigger conversationId=${payload.conversationId} messageId=${payload.messageId}",
+        )
+        val message = payload.toIncomingMessage() ?: run {
+            RuntimeDiagnostics.event("PushCoordinator", "syncIncomingPushMessage SKIP reason=toIncomingMessage_null")
+            return
+        }
         val currentUserId = (observeAuthStateUseCase().value as? AuthState.Authenticated)?.user?.id
         val messageId = message.id
-        val isFromOther = currentUserId != null && message.senderId != currentUserId
+        val shouldAck = messageId != null && shouldAckInboundMessage(message.senderId, currentUserId)
 
-        if (isFromOther && messageId != null) {
-            deliveryAckService.onMessageReceived(
+        if (shouldAck) {
+            ackInboundMessage(
+                payload = payload,
                 source = "fcm",
-                conversationId = message.conversationId,
-                messageId = messageId,
-                senderId = message.senderId,
                 trigger = trigger,
+                message = message,
+                messageId = messageId!!,
             )
         }
 
         chatRepository.upsertIncomingMessage(message)
-
-        if (isFromOther && messageId != null) {
-            deliveryAckService.onMessagePersisted(
-                source = "fcm",
-                conversationId = message.conversationId,
-                messageId = messageId,
-                senderId = message.senderId,
-                trigger = trigger,
-            )
-        }
 
         val isViewing = activeConversationTracker.isViewing(message.conversationId)
         val wasUnknown = conversationRepository.applyIncomingMessage(
@@ -425,6 +503,60 @@ class PushNotificationCoordinator(
         if (wasUnknown) {
             conversationRepository.refreshConversations()
         }
+
+        receiverRepairGateway.value.repairConversation(
+            conversationId = message.conversationId,
+            trigger = ReceiverRepairService.TRIGGER_FCM,
+            hintServerMessageId = messageId,
+        )
+
+        ensureSocketConnectedForDeliveryAck()
+    }
+
+    private suspend fun ackInboundMessage(
+        payload: com.yapyap.core.push.model.PushPayload,
+        source: String,
+        trigger: String,
+        message: com.yapyap.feature.chat.domain.entity.Message? = null,
+        messageId: Int? = null,
+    ) {
+        val resolvedMessage = message ?: payload.toIncomingMessage() ?: run {
+            RuntimeDiagnostics.event("DeliveryAck", "ACK_INBOUND_SKIP reason=toIncomingMessage_null source=$source")
+            return
+        }
+        val resolvedMessageId = messageId ?: resolvedMessage.id ?: run {
+            RuntimeDiagnostics.event("DeliveryAck", "ACK_INBOUND_SKIP reason=message_id_null source=$source")
+            return
+        }
+        deliveryAckService.onMessageReceived(
+            source = source,
+            conversationId = resolvedMessage.conversationId,
+            messageId = resolvedMessageId,
+            senderId = resolvedMessage.senderId,
+            trigger = trigger,
+        )
+        deliveryAckService.onMessagePersisted(
+            source = source,
+            conversationId = resolvedMessage.conversationId,
+            messageId = resolvedMessageId,
+            senderId = resolvedMessage.senderId,
+            trigger = trigger,
+        )
+        ensureSocketConnectedForDeliveryAck()
+    }
+
+    private fun ensureSocketConnectedForDeliveryAck() {
+        RuntimeDiagnostics.enter("DeliveryAck", "ensureSocketConnectedForDeliveryAck")
+        if (observeAuthStateUseCase().value !is AuthState.Authenticated) {
+            RuntimeDiagnostics.event("DeliveryAck", "ensureSocketConnected SKIP reason=not_authenticated")
+            return
+        }
+        val token = tokenStorage.getAccessToken()
+        if (token.isNullOrBlank()) {
+            RuntimeDiagnostics.event("DeliveryAck", "ensureSocketConnected SKIP reason=no_token")
+            return
+        }
+        chatRealtimeClient.connect(token)
     }
 
     private suspend fun handleIncomingCall(

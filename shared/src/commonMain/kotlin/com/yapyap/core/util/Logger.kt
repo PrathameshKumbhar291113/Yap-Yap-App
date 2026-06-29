@@ -2,14 +2,14 @@ package com.yapyap.core.util
 
 import co.touchlab.kermit.Logger
 import co.touchlab.kermit.Severity
-import co.touchlab.kermit.platformLogWriter
 
 object YapLogger {
     private val logger = Logger.withTag("YapYap")
 
     fun install(isDebug: Boolean) {
-        Logger.setLogWriters(platformLogWriter())
+        platformLogWriters(isDebug)
         Logger.setMinSeverity(if (isDebug) Severity.Debug else Severity.Warn)
+        logPlatformHint()
     }
 
     fun d(message: String, tag: String = "App") {

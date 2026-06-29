@@ -10,7 +10,7 @@ val sessionModule = module {
             tokenStorage = get(),
             sessionEvents = get(),
             chatRealtimeClient = get(),
-            realtimeCoordinator = get(),
+            realtimeCoordinator = lazy { get() },
             dispatcherProvider = get(),
         )
     }

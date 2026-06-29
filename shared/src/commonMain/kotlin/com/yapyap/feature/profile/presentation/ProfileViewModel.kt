@@ -24,7 +24,7 @@ class ProfileViewModel(
     private val chatRealtimeClient: ChatRealtimeClient,
     private val pushNotificationCoordinator: PushNotificationCoordinator,
 ) : ViewModel() {
-    private val formOverrides = MutableStateFlow<FormOverrides?>(null)
+    private val nameOverride = MutableStateFlow<String?>(null)
     private val isSaving = MutableStateFlow(false)
     private val saveError = MutableStateFlow<String?>(null)
     private val saveSuccess = MutableStateFlow(false)
@@ -32,14 +32,14 @@ class ProfileViewModel(
 
     val uiState: StateFlow<ProfileUiState> = combine(
         observeAuthStateUseCase(),
-        formOverrides,
+        nameOverride,
         isSaving,
         saveError,
         saveSuccess,
         isLoggingOut,
     ) { values ->
         val authState = values[0] as AuthState
-        val overrides = values[1] as FormOverrides?
+        val name = values[1] as String?
         val saving = values[2] as Boolean
         val error = values[3] as String?
         val success = values[4] as Boolean
@@ -49,11 +49,10 @@ class ProfileViewModel(
             AuthState.Loading -> ProfileUiState.Loading
             AuthState.Unauthenticated -> ProfileUiState.Error("Not signed in")
             is AuthState.Authenticated -> {
-                val (defaultName, defaultPhone) = authState.user.toProfileFields()
+                val (defaultName, _) = authState.user.toProfileFields()
                 ProfileUiState.Content(
                     user = authState.user,
-                    name = overrides?.name ?: defaultName,
-                    phone = overrides?.phone ?: defaultPhone,
+                    name = name ?: defaultName,
                     isSaving = saving,
                     saveError = error,
                     saveSuccess = success,
@@ -68,13 +67,7 @@ class ProfileViewModel(
     )
 
     fun onNameChange(value: String) {
-        updateOverrides { it.copy(name = value) }
-        saveError.value = null
-        saveSuccess.value = false
-    }
-
-    fun onPhoneChange(value: String) {
-        updateOverrides { it.copy(phone = value) }
+        nameOverride.value = value
         saveError.value = null
         saveSuccess.value = false
     }
@@ -87,7 +80,7 @@ class ProfileViewModel(
             saveSuccess.value = false
             updateProfileUseCase(content.toProfileUpdate())
                 .onSuccess {
-                    formOverrides.value = null
+                    nameOverride.value = null
                     saveSuccess.value = true
                 }
                 .onFailure { updateError ->
@@ -107,18 +100,4 @@ class ProfileViewModel(
             onLoggedOut()
         }
     }
-
-    private fun updateOverrides(block: (FormOverrides) -> FormOverrides) {
-        val current = uiState.value as? ProfileUiState.Content ?: return
-        val base = formOverrides.value ?: FormOverrides(
-            name = current.name,
-            phone = current.phone,
-        )
-        formOverrides.value = block(base)
-    }
-
-    private data class FormOverrides(
-        val name: String,
-        val phone: String,
-    )
 }

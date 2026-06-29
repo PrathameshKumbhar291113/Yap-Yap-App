@@ -1,23 +1,70 @@
 package com.yapyap.core.push
 
+import com.yapyap.core.push.model.ConversationNotificationMessage
 import com.yapyap.core.push.model.LocalPushNotification
 import com.yapyap.core.push.model.PushMessageType
 import com.yapyap.core.push.model.PushNotificationChannel
 import com.yapyap.core.push.model.PushPayload
+import kotlin.time.Clock
 
 object PushNotificationContent {
 
-    fun fromPayload(payload: PushPayload): LocalPushNotification? = when (payload.type) {
-        PushMessageType.NewMessage -> buildMessageNotification(payload)
+    fun fromPayload(
+        payload: PushPayload,
+        messageHistory: List<ConversationNotificationMessage> = emptyList(),
+        showGroupSummary: Boolean = false,
+    ): LocalPushNotification? = when (payload.type) {
+        PushMessageType.NewMessage -> buildMessageNotification(payload, messageHistory, showGroupSummary)
         PushMessageType.IncomingCall -> buildCallNotification(payload)
         PushMessageType.Unknown -> null
     }
 
-    private fun buildMessageNotification(payload: PushPayload): LocalPushNotification {
-        val channel = channelForMessageType(payload.messageType)
+    fun fromConversationState(
+        state: ConversationNotificationState,
+        payload: PushPayload,
+        showGroupSummary: Boolean,
+    ): LocalPushNotification {
+        val latest = state.messages.lastOrNull()
         return LocalPushNotification(
-            title = payload.senderName?.takeIf { it.isNotBlank() } ?: "New message",
-            body = payload.preview?.takeIf { it.isNotBlank() } ?: defaultBodyForType(payload.messageType),
+            title = state.senderName,
+            body = latest?.text ?: payload.preview.orEmpty(),
+            channel = channelForMessageType(payload.messageType),
+            data = payload.raw,
+            tag = payload.notificationTag,
+            notificationId = stableNotificationId(payload.notificationTag),
+            groupKey = payload.conversationId?.let { GROUP_MESSAGES },
+            conversationId = payload.conversationId,
+            messageId = latest?.messageId ?: payload.messageId,
+            imageUrl = payload.mediaUrl?.takeIf { channelForMessageType(payload.messageType) == PushNotificationChannel.Media },
+            threadId = payload.threadId,
+            messageHistory = state.messages,
+            showGroupSummary = showGroupSummary,
+        )
+    }
+
+    private fun buildMessageNotification(
+        payload: PushPayload,
+        messageHistory: List<ConversationNotificationMessage>,
+        showGroupSummary: Boolean,
+    ): LocalPushNotification {
+        val channel = channelForMessageType(payload.messageType)
+        val senderName = payload.senderName?.takeIf { it.isNotBlank() } ?: "New message"
+        val body = payload.preview?.takeIf { it.isNotBlank() } ?: defaultBodyForType(payload.messageType)
+        val history = messageHistory.ifEmpty {
+            payload.messageId?.let { id ->
+                listOf(
+                    ConversationNotificationMessage(
+                        messageId = id,
+                        senderName = senderName,
+                        text = body,
+                        timestamp = Clock.System.now().toEpochMilliseconds(),
+                    ),
+                )
+            }.orEmpty()
+        }
+        return LocalPushNotification(
+            title = senderName,
+            body = history.lastOrNull()?.text ?: body,
             channel = channel,
             data = payload.raw,
             tag = payload.notificationTag,
@@ -27,6 +74,8 @@ object PushNotificationContent {
             messageId = payload.messageId,
             imageUrl = payload.mediaUrl?.takeIf { channel == PushNotificationChannel.Media },
             threadId = payload.threadId,
+            messageHistory = history,
+            showGroupSummary = showGroupSummary,
         )
     }
 

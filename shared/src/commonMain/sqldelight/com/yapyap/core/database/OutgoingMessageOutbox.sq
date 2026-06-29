@@ -1,0 +1,72 @@
+CREATE TABLE outgoing_message_outbox (
+    client_message_id TEXT NOT NULL PRIMARY KEY,
+    conversation_id INTEGER NOT NULL,
+    sender_id INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    message_type TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    retry_count INTEGER NOT NULL DEFAULT 0,
+    next_retry_at_ms INTEGER NOT NULL DEFAULT 0,
+    enqueue_order INTEGER NOT NULL
+);
+
+CREATE INDEX outbox_enqueue_order ON outgoing_message_outbox(enqueue_order);
+CREATE INDEX outbox_conversation ON outgoing_message_outbox(conversation_id, enqueue_order);
+
+selectAllOrdered:
+SELECT *
+FROM outgoing_message_outbox
+ORDER BY enqueue_order ASC;
+
+selectPendingOrdered:
+SELECT *
+FROM outgoing_message_outbox
+WHERE status IN ('QUEUED', 'SENDING')
+ORDER BY enqueue_order ASC;
+
+selectForConversation:
+SELECT *
+FROM outgoing_message_outbox
+WHERE conversation_id = ?
+ORDER BY enqueue_order ASC;
+
+selectByClientMessageId:
+SELECT *
+FROM outgoing_message_outbox
+WHERE client_message_id = ?;
+
+maxEnqueueOrder:
+SELECT MAX(enqueue_order) FROM outgoing_message_outbox;
+
+insertOutboxMessage:
+INSERT OR REPLACE INTO outgoing_message_outbox(
+    client_message_id,
+    conversation_id,
+    sender_id,
+    content,
+    message_type,
+    status,
+    created_at,
+    retry_count,
+    next_retry_at_ms,
+    enqueue_order
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+updateOutboxStatus:
+UPDATE outgoing_message_outbox
+SET status = ?, retry_count = ?, next_retry_at_ms = ?
+WHERE client_message_id = ?;
+
+resetSendingToQueued:
+UPDATE outgoing_message_outbox
+SET status = 'QUEUED'
+WHERE status = 'SENDING';
+
+deleteOutboxMessage:
+DELETE FROM outgoing_message_outbox
+WHERE client_message_id = ?;
+
+countPending:
+SELECT COUNT(*) FROM outgoing_message_outbox
+WHERE status IN ('QUEUED', 'SENDING');

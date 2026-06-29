@@ -15,12 +15,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -105,7 +107,7 @@ fun ConversationsListScreen(
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(Res.string.chats)) },
-                windowInsets = YapInsets.topAppBar,
+                windowInsets = YapInsets.topAppBarNested,
                 actions = {
                     TextButton(onClick = { showNewChatDialog = true }) {
                         Text(stringResource(Res.string.new_chat))
@@ -114,10 +116,16 @@ fun ConversationsListScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { showNewChatDialog = true }) {
+            FloatingActionButton(
+                onClick = { showNewChatDialog = true },
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 6.dp),
+            ) {
                 YapIcon(
                     resource = YapDrawable.Add,
                     contentDescription = stringResource(Res.string.cd_new_chat),
+                    tint = MaterialTheme.colorScheme.onPrimary,
                 )
             }
         },
@@ -228,10 +236,13 @@ private fun ConversationRow(
                 Spacer(modifier = Modifier.width(YapSpacing.xs))
                 BadgedBox(
                     badge = {
-                        Text(
-                            text = conversation.unreadCount.coerceAtMost(99).toString(),
-                            modifier = Modifier.padding(horizontal = YapSpacing.xxs),
-                        )
+                        Badge(containerColor = MaterialTheme.colorScheme.primary) {
+                            Text(
+                                text = conversation.unreadCount.coerceAtMost(99).toString(),
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.padding(horizontal = YapSpacing.xxs),
+                            )
+                        }
                     },
                 ) {
                     Spacer(modifier = Modifier.width(YapSpacing.xs))

@@ -28,7 +28,8 @@ enum class MessageType {
 }
 
 enum class MessageStatus {
-    PENDING,
+    QUEUED,
+    SENDING,
     FAILED,
     SENT,
     DELIVERED,
@@ -40,6 +41,9 @@ enum class MessageStatus {
             "delivered" -> DELIVERED
             "read" -> READ
             "sent" -> SENT
+            "queued" -> QUEUED
+            "sending" -> SENDING
+            "failed" -> FAILED
             else -> SENT
         }
     }
