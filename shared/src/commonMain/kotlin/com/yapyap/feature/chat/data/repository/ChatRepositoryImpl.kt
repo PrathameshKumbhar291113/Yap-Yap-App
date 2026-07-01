@@ -504,16 +504,23 @@ class ChatRepositoryImpl(
 
     override suspend fun markOutboxSent(clientMessageId: String, serverMessage: Message) {
         mutex.withLock {
-            val conversationId = serverMessage.conversationId
-            val cache = cacheFor(conversationId)
-            cache.messages.value = cache.messages.value.map { message ->
-                if (message.clientMessageId == clientMessageId) {
-                    mergeMessageFields(message, serverMessage.copy(isPending = false))
-                } else {
-                    message
-                }
+            val cache = cacheFor(serverMessage.conversationId)
+            val resolved = serverMessage.copy(
+                isPending = false,
+                clientMessageId = serverMessage.clientMessageId ?: clientMessageId,
+            )
+            val remaining = cache.messages.value.filterNot { message ->
+                messagesRepresentSameLogicalMessage(message, resolved)
             }
+            cache.messages.value = mergeMessages(remaining, listOf(resolved))
         }
+        OutboxPipelineTrace.stage(
+            stage = "CHAT_CACHE_UPDATED",
+            clientMessageId = clientMessageId,
+            serverMessageId = serverMessage.id,
+            conversationId = serverMessage.conversationId,
+            extra = mapOf("source" to "markOutboxSent"),
+        )
     }
 
     override suspend fun markOutboxFailed(clientMessageId: String) {
@@ -597,11 +604,20 @@ class ChatRepositoryImpl(
     private fun mergeMessages(primary: List<Message>, secondary: List<Message>): List<Message> {
         val merged = LinkedHashMap<String, Message>()
         (primary + secondary).forEach { message ->
-            val existing = merged[message.stableKey]
-            merged[message.stableKey] = if (existing == null) {
+            val matchKey = findMatchingKey(merged, message)
+            val existing = matchKey?.let { merged[it] }
+            val mergedMessage = if (existing == null) {
                 message
             } else {
                 mergeMessageFields(existing, message)
+            }
+            if (matchKey != null && matchKey != mergedMessage.stableKey) {
+                merged.remove(matchKey)
+            }
+            merged[mergedMessage.stableKey] = mergedMessage
+            merged.entries.removeAll { (key, candidate) ->
+                key != mergedMessage.stableKey &&
+                    messagesRepresentSameLogicalMessage(candidate, mergedMessage)
             }
         }
         return merged.values.sortedWith(
@@ -610,9 +626,26 @@ class ChatRepositoryImpl(
         )
     }
 
+    private fun findMatchingKey(merged: Map<String, Message>, message: Message): String? {
+        return merged.entries.firstOrNull { (_, existing) ->
+            messagesRepresentSameLogicalMessage(existing, message)
+        }?.key
+    }
+
+    private fun messagesRepresentSameLogicalMessage(first: Message, second: Message): Boolean {
+        if (first.clientMessageId != null && first.clientMessageId == second.clientMessageId) {
+            return true
+        }
+        if (first.id != null && first.id == second.id) {
+            return true
+        }
+        return false
+    }
+
     private fun mergeMessageFields(existing: Message, incoming: Message): Message {
         val base = if (incoming.id != null) incoming else existing
         return base.copy(
+            clientMessageId = incoming.clientMessageId ?: existing.clientMessageId,
             status = mergeMessageStatus(existing.status, incoming.status),
             isPending = existing.isPending && incoming.isPending,
         )
