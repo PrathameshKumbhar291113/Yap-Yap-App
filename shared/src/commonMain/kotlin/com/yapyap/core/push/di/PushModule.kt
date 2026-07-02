@@ -32,6 +32,8 @@ val pushModule = module {
             deliveryAckService = get(),
             chatRealtimeClient = get(),
             receiverRepairGateway = lazy { get() },
+            callCoordinator = lazy { get() },
+            callNativeCoordinator = lazy { get() },
             notificationStore = get(),
             dispatcherProvider = get(),
         )

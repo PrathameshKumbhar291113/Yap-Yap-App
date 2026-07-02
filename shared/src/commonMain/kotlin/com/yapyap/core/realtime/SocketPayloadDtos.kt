@@ -61,3 +61,58 @@ data class SocketMessageDeliveredPayload(
     val conversationId: Int,
     val messageId: Int,
 )
+
+@Serializable
+data class CallSessionIdPayload(
+    val callSessionId: String,
+)
+
+@Serializable
+data class CallIncomingPayload(
+    val callSessionId: String,
+    val callerId: Int,
+    val callerName: String? = null,
+    /** Socket payload uses `type` for audio/video; push uses `type` for incoming_call. */
+    val type: String? = null,
+    val callType: String? = null,
+    @SerialName("call_type") val callTypeSnake: String? = null,
+    val conversationId: Int? = null,
+    val roomName: String? = null,
+) {
+    fun resolvedCallTypeRaw(): String? {
+        callType?.takeIf { it.isNotBlank() }?.let { return it }
+        callTypeSnake?.takeIf { it.isNotBlank() }?.let { return it }
+        return type?.takeUnless { it.equals("incoming_call", ignoreCase = true) }
+    }
+}
+
+@Serializable
+data class CallAcceptedPayload(
+    val callSessionId: String,
+    val providerToken: String? = null,
+    @SerialName("livekit_url") val livekitUrl: String? = null,
+    val roomName: String? = null,
+)
+
+@Serializable
+data class CallRejectedPayload(
+    val callSessionId: String,
+    val reason: String? = null,
+)
+
+@Serializable
+data class CallEndedPayload(
+    val callSessionId: String,
+    val durationSec: Int? = null,
+)
+
+@Serializable
+data class CallSyncPayload(
+    val callSessionId: String,
+    val status: String,
+    val endReason: String? = null,
+    val durationSec: Int? = null,
+    val event: String? = null,
+    val conversationId: Int? = null,
+    val reason: String? = null,
+)

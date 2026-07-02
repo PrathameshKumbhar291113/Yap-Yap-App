@@ -39,6 +39,7 @@ import androidx.compose.material3.TextFieldDefaults
 import com.yapyap.core.ui.YapDrawable
 import com.yapyap.core.ui.YapIcon
 import androidx.compose.material3.TopAppBar
+import com.yapyap.feature.call.presentation.YapCallTopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -68,6 +69,8 @@ import com.yapyap.core.util.yesterdayDateKey
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import yapyap.shared.generated.resources.Res
+import yapyap.shared.generated.resources.call_video_short
+import yapyap.shared.generated.resources.call_voice_short
 import yapyap.shared.generated.resources.cd_back
 import yapyap.shared.generated.resources.cd_send
 import yapyap.shared.generated.resources.chats
@@ -170,14 +173,28 @@ private fun ChatScreenContent(
         modifier = Modifier.fillMaxSize(),
         contentWindowInsets = YapInsets.screenContent,
         topBar = {
-            TopAppBar(
-                title = { Text(titleLabel) },
+            YapCallTopAppBar(
+                title = titleLabel,
                 windowInsets = YapInsets.topAppBarStandalone,
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         YapIcon(
                             resource = YapDrawable.ArrowBack,
                             contentDescription = stringResource(Res.string.cd_back),
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(onClick = viewModel::startVoiceCall) {
+                        YapIcon(
+                            resource = YapDrawable.Call,
+                            contentDescription = stringResource(Res.string.call_voice_short),
+                        )
+                    }
+                    IconButton(onClick = viewModel::startVideoCall) {
+                        YapIcon(
+                            resource = YapDrawable.Videocam,
+                            contentDescription = stringResource(Res.string.call_video_short),
                         )
                     }
                 },

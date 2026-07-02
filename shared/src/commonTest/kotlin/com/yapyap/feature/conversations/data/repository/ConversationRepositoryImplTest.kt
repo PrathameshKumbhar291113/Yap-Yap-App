@@ -9,6 +9,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.headersOf
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.flow.first
@@ -34,6 +35,73 @@ class ConversationRepositoryImplTest {
         ),
         NoopMessageDeliveryAcknowledgementGateway,
     )
+
+    @Test
+    fun refreshConversations_dedupesSameDirectPartner() = runTest {
+        val repository = ConversationRepositoryImpl(
+            ConversationApi(
+                HttpClient(
+                    MockEngine {
+                        respond(
+                            content = """
+                                {
+                                  "success": true,
+                                  "data": {
+                                    "conversations": [
+                                      {
+                                        "id": 50,
+                                        "type": "direct",
+                                        "created_at": "2026-06-21T10:00:00Z",
+                                        "updated_at": "2026-06-21T12:00:00Z",
+                                        "unread_count": 1,
+                                        "partner": { "id": 2, "name": "Bob", "email": "bob@test.com" },
+                                        "last_message": {
+                                          "id": 10,
+                                          "content": "Older",
+                                          "message_type": "text",
+                                          "sender_id": 2,
+                                          "created_at": "2026-06-21T11:00:00Z"
+                                        }
+                                      },
+                                      {
+                                        "id": 99,
+                                        "type": "direct",
+                                        "created_at": "2026-06-21T09:00:00Z",
+                                        "updated_at": "2026-06-21T13:00:00Z",
+                                        "unread_count": 2,
+                                        "partner": { "id": 2, "name": "Bob", "email": "bob@test.com" },
+                                        "last_message": {
+                                          "id": 20,
+                                          "content": "Newer",
+                                          "message_type": "text",
+                                          "sender_id": 2,
+                                          "created_at": "2026-06-21T13:00:00Z"
+                                        }
+                                      }
+                                    ]
+                                  }
+                                }
+                            """.trimIndent(),
+                            status = HttpStatusCode.OK,
+                            headers = headersOf("Content-Type", "application/json"),
+                        )
+                    },
+                ) {
+                    install(ContentNegotiation) {
+                        json(Json { ignoreUnknownKeys = true })
+                    }
+                },
+            ),
+            NoopMessageDeliveryAcknowledgementGateway,
+        )
+
+        repository.refreshConversations().getOrThrow()
+
+        val conversations = repository.observeConversations().first()
+        assertEquals(1, conversations.size)
+        assertEquals(99, conversations.first().id)
+        assertEquals("Newer", conversations.first().lastMessage?.content)
+    }
 
     @Test
     fun applyIncomingMessage_addsStubWhenConversationUnknown() = runTest {

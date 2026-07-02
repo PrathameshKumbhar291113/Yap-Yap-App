@@ -95,6 +95,12 @@ class ReceiverSyncPipelineTest {
             deduplicator = PushMessageDeduplicator(),
             pushNotificationCoordinator = lazy { error("not used") },
             deliveryAckService = NoopMessageDeliveryAcknowledgementGateway,
+            callSignalingRepository = lazy {
+                object : com.yapyap.core.call.CallSignalingRepository {
+                    override fun start(parentScope: kotlinx.coroutines.CoroutineScope) = Unit
+                    override fun handleEvent(event: com.yapyap.core.call.CallSignalingEvent) = Unit
+                }
+            },
         )
     }
 
@@ -216,13 +222,13 @@ class ReceiverSyncPipelineTest {
         override suspend fun refreshConversations(): Result<Unit> = Result.success(Unit)
         override suspend fun createDirectConversation(contact: String): Result<Conversation> =
             Result.failure(UnsupportedOperationException())
-        override fun applyIncomingMessage(
+        override suspend fun applyIncomingMessage(
             conversationId: Int,
             message: Message,
             currentUserId: Int?,
             isViewingConversation: Boolean,
         ): Boolean = false
-        override fun applyConversationRead(conversationId: Int) = Unit
+        override suspend fun applyConversationRead(conversationId: Int) = Unit
         override fun snapshotConversations(): List<Conversation> = emptyList()
     }
 

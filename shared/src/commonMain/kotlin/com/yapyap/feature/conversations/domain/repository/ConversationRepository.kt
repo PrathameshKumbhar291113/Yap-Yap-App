@@ -17,7 +17,7 @@ interface ConversationRepository {
      *
      * @return `true` if the conversation was previously unknown (caller may refresh to enrich).
      */
-    fun applyIncomingMessage(
+    suspend fun applyIncomingMessage(
         conversationId: Int,
         message: Message,
         currentUserId: Int?,
@@ -25,7 +25,7 @@ interface ConversationRepository {
     ): Boolean
 
     /** Clears local unread badge after the server read cursor is updated. */
-    fun applyConversationRead(conversationId: Int)
+    suspend fun applyConversationRead(conversationId: Int)
 
     /** Current in-memory conversation list (for pre-refresh snapshot). */
     fun snapshotConversations(): List<Conversation>

@@ -30,6 +30,12 @@ sealed class ApiException(
         errorCode: String? = ERROR_CONFLICT,
     ) : ApiException(message, httpStatus, errorCode)
 
+    class CallAlreadyActive(
+        message: String,
+        val callSessionId: String,
+        httpStatus: Int? = 409,
+    ) : ApiException(message, httpStatus, ERROR_CALL_ALREADY_ACTIVE)
+
     class ValidationError(
         message: String,
         httpStatus: Int? = 400,
@@ -47,17 +53,27 @@ sealed class ApiException(
         const val ERROR_TOKEN_INVALID = "TOKEN_INVALID"
         const val ERROR_NOT_FOUND = "NOT_FOUND"
         const val ERROR_CONFLICT = "CONFLICT"
+        const val ERROR_CALL_ALREADY_ACTIVE = "CALL_ALREADY_ACTIVE"
         const val ERROR_VALIDATION = "VALIDATION_ERROR"
 
         fun from(
             httpStatus: Int? = null,
             errorCode: String? = null,
             message: String = "Request failed",
+            details: ApiErrorDetails? = null,
         ): ApiException = when (errorCode) {
             ERROR_AUTH_INVALID -> AuthInvalid(message, httpStatus, errorCode)
             ERROR_TOKEN_INVALID -> TokenInvalid(message, httpStatus, errorCode)
             ERROR_NOT_FOUND -> NotFound(message, httpStatus, errorCode)
             ERROR_CONFLICT -> Conflict(message, httpStatus, errorCode)
+            ERROR_CALL_ALREADY_ACTIVE -> {
+                val sessionId = details?.callSessionId
+                if (!sessionId.isNullOrBlank()) {
+                    CallAlreadyActive(message, sessionId, httpStatus)
+                } else {
+                    Conflict(message, httpStatus, errorCode)
+                }
+            }
             ERROR_VALIDATION -> ValidationError(message, httpStatus, errorCode)
             else -> when (httpStatus) {
                 401 -> AuthInvalid(message, httpStatus, errorCode)

@@ -51,6 +51,10 @@ final class YapPushManager: NSObject {
     }
 
     func registerForRemoteNotifications() {
+        guard YapProvisioningCapabilities.isRemoteNotificationsAvailable else {
+            diag("Firebase", "remote notifications disabled for this build/profile")
+            return
+        }
         DispatchQueue.main.async {
             UIApplication.shared.registerForRemoteNotifications()
         }
@@ -83,7 +87,7 @@ final class YapPushManager: NSObject {
     private func requestPermission() {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { granted, _ in
             IosPushBridge.shared.deliverPermissionResult(granted: granted)
-            if granted {
+            if granted, YapProvisioningCapabilities.isRemoteNotificationsAvailable {
                 self.registerForRemoteNotifications()
             }
         }

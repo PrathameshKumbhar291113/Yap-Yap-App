@@ -7,6 +7,8 @@ struct iOSApp: App {
     init() {
         YapSocketBridgeInstaller.install()
         YapNetworkBridgeInstaller.install()
+        YapLiveKitBridge.install()
+        YapCameraPermissionBridge.install()
     }
 
     var body: some Scene {

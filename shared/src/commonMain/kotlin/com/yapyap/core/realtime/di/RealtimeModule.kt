@@ -49,6 +49,7 @@ val realtimeModule = module {
             deduplicator = get(),
             pushNotificationCoordinator = lazy { get() },
             deliveryAckService = get(),
+            callSignalingRepository = lazy { get() },
         )
     }
     single<ReceiverRepairGateway> {

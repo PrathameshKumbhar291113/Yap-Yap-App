@@ -13,6 +13,11 @@ import yapyap.shared.generated.resources.ic_app_logo
 import yapyap.shared.generated.resources.ic_arrow_back
 import yapyap.shared.generated.resources.ic_chat
 import yapyap.shared.generated.resources.ic_chevron_right
+import yapyap.shared.generated.resources.ic_call
+import yapyap.shared.generated.resources.ic_flip_camera
+import yapyap.shared.generated.resources.ic_mic
+import yapyap.shared.generated.resources.ic_speaker
+import yapyap.shared.generated.resources.ic_videocam
 import yapyap.shared.generated.resources.ic_description
 import yapyap.shared.generated.resources.ic_edit
 import yapyap.shared.generated.resources.ic_help
@@ -54,5 +59,10 @@ object YapDrawable {
     val Description = Res.drawable.ic_description
     val Help = Res.drawable.ic_help
     val Info = Res.drawable.ic_info
+    val Mic = Res.drawable.ic_mic
+    val Speaker = Res.drawable.ic_speaker
+    val Call = Res.drawable.ic_call
+    val Videocam = Res.drawable.ic_videocam
+    val FlipCamera = Res.drawable.ic_flip_camera
     val ChevronRight = Res.drawable.ic_chevron_right
 }

@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 
@@ -17,3 +18,7 @@ actual fun platformTopAppBarNested(): WindowInsets = TopAppBarDefaults.windowIns
 @Composable
 actual fun platformBottomNavigationBar(): WindowInsets =
     WindowInsets.navigationBars.only(WindowInsetsSides.Bottom)
+
+/** Full-screen overlays need explicit safe-area padding on Android. */
+@Composable
+actual fun platformFullScreenOverlay(): WindowInsets = WindowInsets.safeDrawing

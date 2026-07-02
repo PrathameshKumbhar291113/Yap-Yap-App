@@ -27,4 +27,39 @@ sealed interface SocketEvent {
         val userId: Int,
         val online: Boolean,
     ) : SocketEvent
+
+    data class CallIncoming(
+        val callSessionId: String,
+        val callerId: Int,
+        val callerName: String?,
+        val callType: String?,
+        val conversationId: Int?,
+        val roomName: String?,
+    ) : SocketEvent
+
+    data class CallAccepted(
+        val callSessionId: String,
+        val providerToken: String?,
+        val livekitUrl: String?,
+        val roomName: String?,
+    ) : SocketEvent
+
+    data class CallRejected(
+        val callSessionId: String,
+        val reason: String?,
+    ) : SocketEvent
+
+    data class CallEnded(
+        val callSessionId: String,
+        val durationSec: Int?,
+    ) : SocketEvent
+
+    data class CallSync(
+        val callSessionId: String,
+        val status: String,
+        val endReason: String? = null,
+        val durationSec: Int? = null,
+        val event: String? = null,
+        val conversationId: Int? = null,
+    ) : SocketEvent
 }

@@ -6,26 +6,34 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
+import com.yapyap.core.call.CallNativeBridge
+import com.yapyap.core.call.CallPermissionLauncher
+import com.yapyap.core.call.CallPermissionRequestRegistry
+import com.yapyap.core.call.YAP_TELECOM_EXTRA_CALL_SESSION_ID
 import com.yapyap.core.diagnostics.RuntimeDiagnostics
+import com.yapyap.feature.call.presentation.ActivityHolder
 import com.yapyap.core.push.AndroidPushRuntimeTrace
 import com.yapyap.core.push.PushIntentParser
 import com.yapyap.core.push.PushNotificationCoordinator
 import com.yapyap.core.session.SessionManager
-import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
 
 class MainActivity : ComponentActivity() {
     private val pushNotificationCoordinator: PushNotificationCoordinator by inject()
     private val sessionManager: SessionManager by inject()
 
-    private var notificationPermissionRequested = false
+    private val callPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { grantResults ->
+        CallPermissionRequestRegistry.onResult(grantResults)
+    }
 
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -34,12 +42,6 @@ class MainActivity : ComponentActivity() {
             pushNotificationCoordinator.onPermissionResult(granted = true)
         } else {
             pushNotificationCoordinator.onPermissionResult(granted = false)
-            if (
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                !shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)
-            ) {
-                openNotificationSettings()
-            }
         }
     }
 
@@ -49,14 +51,17 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
+        CallPermissionRequestRegistry.bindLauncher(
+            CallPermissionLauncher { permissions ->
+                callPermissionLauncher.launch(permissions)
+            },
+        )
+
         handleNotificationIntent(intent, source = "onCreate")
+        handleTelecomCallIntent(intent, source = "onCreate")
 
         setContent {
             YapYapApp()
-        }
-
-        lifecycleScope.launch {
-            requestNotificationPermissionIfNeeded()
         }
     }
 
@@ -66,16 +71,20 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleNotificationIntent(intent, source = "onNewIntent")
+        handleTelecomCallIntent(intent, source = "onNewIntent")
     }
 
     override fun onResume() {
         super.onResume()
+        ActivityHolder.current = this
         RuntimeDiagnostics.event("Lifecycle", "MainActivity.onResume")
         sessionManager.onAppForeground()
         pushNotificationCoordinator.onAppForeground()
+        syncNotificationPermissionState()
     }
 
     override fun onPause() {
+        ActivityHolder.current = null
         RuntimeDiagnostics.event("Lifecycle", "MainActivity.onPause")
         super.onPause()
     }
@@ -90,34 +99,31 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
-    private fun requestNotificationPermissionIfNeeded() {
+    fun requestNotificationPermissionIfNeeded() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
             pushNotificationCoordinator.onPermissionResult(granted = true)
             return
         }
-
         when (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)) {
             PackageManager.PERMISSION_GRANTED -> {
                 pushNotificationCoordinator.onPermissionResult(granted = true)
             }
             else -> {
-                if (!notificationPermissionRequested) {
-                    notificationPermissionRequested = true
-                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                } else if (!shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)) {
-                    pushNotificationCoordinator.onPermissionResult(granted = false)
-                    openNotificationSettings()
-                }
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         }
     }
 
-    private fun openNotificationSettings() {
-        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-            data = Uri.fromParts("package", packageName, null)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    private fun syncNotificationPermissionState() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            pushNotificationCoordinator.onPermissionResult(granted = true)
+            return
         }
-        startActivity(intent)
+        val granted = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.POST_NOTIFICATIONS,
+        ) == PackageManager.PERMISSION_GRANTED
+        pushNotificationCoordinator.onPermissionResult(granted = granted)
     }
 
     private fun handleNotificationIntent(intent: Intent?, source: String) {
@@ -143,5 +149,18 @@ class MainActivity : ComponentActivity() {
             "MainActivity.handleNotificationIntent PARSED data=$data source=$source",
         )
         pushNotificationCoordinator.handleNotificationOpened(data)
+    }
+
+    private fun handleTelecomCallIntent(intent: Intent?, source: String) {
+        if (intent?.getBooleanExtra("yapyap_open_call", false) != true) return
+        val callSessionId = intent.getStringExtra(YAP_TELECOM_EXTRA_CALL_SESSION_ID) ?: return
+        RuntimeDiagnostics.enter(
+            "Lifecycle",
+            "MainActivity.handleTelecomCallIntent",
+            "callSessionId=$callSessionId source=$source",
+        )
+        lifecycleScope.launch {
+            CallNativeBridge.onRestoreFromNative(callSessionId)
+        }
     }
 }

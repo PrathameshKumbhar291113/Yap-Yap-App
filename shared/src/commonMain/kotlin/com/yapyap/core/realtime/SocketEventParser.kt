@@ -51,6 +51,56 @@ class SocketEventParser(
         )
     }
 
+    fun parseCallIncoming(rawJson: String): SocketEvent.CallIncoming {
+        val payload = json.decodeFromString<CallIncomingPayload>(rawJson)
+        return SocketEvent.CallIncoming(
+            callSessionId = payload.callSessionId,
+            callerId = payload.callerId,
+            callerName = payload.callerName,
+            callType = payload.resolvedCallTypeRaw(),
+            conversationId = payload.conversationId,
+            roomName = payload.roomName,
+        )
+    }
+
+    fun parseCallAccepted(rawJson: String): SocketEvent.CallAccepted {
+        val payload = json.decodeFromString<CallAcceptedPayload>(rawJson)
+        return SocketEvent.CallAccepted(
+            callSessionId = payload.callSessionId,
+            providerToken = payload.providerToken,
+            livekitUrl = payload.livekitUrl,
+            roomName = payload.roomName,
+        )
+    }
+
+    fun parseCallRejected(rawJson: String): SocketEvent.CallRejected {
+        val payload = json.decodeFromString<CallRejectedPayload>(rawJson)
+        return SocketEvent.CallRejected(
+            callSessionId = payload.callSessionId,
+            reason = payload.reason,
+        )
+    }
+
+    fun parseCallEnded(rawJson: String): SocketEvent.CallEnded {
+        val payload = json.decodeFromString<CallEndedPayload>(rawJson)
+        return SocketEvent.CallEnded(
+            callSessionId = payload.callSessionId,
+            durationSec = payload.durationSec,
+        )
+    }
+
+    fun parseCallSync(rawJson: String): SocketEvent.CallSync {
+        val payload = json.decodeFromString<CallSyncPayload>(rawJson)
+        return SocketEvent.CallSync(
+            callSessionId = payload.callSessionId,
+            status = payload.status,
+            endReason = payload.endReason ?: payload.reason,
+            durationSec = payload.durationSec,
+            event = payload.event,
+            conversationId = payload.conversationId,
+        )
+    }
+
     fun parseSendMessageAck(rawJson: String): Result<MessageDto> {
         val root = json.parseToJsonElement(rawJson).jsonObject
         val success = root["success"]?.jsonPrimitive?.boolean ?: false
@@ -81,6 +131,7 @@ class SocketEventParser(
         is SocketConversationPayload -> json.encodeToString(value)
         is SocketMessageReadPayload -> json.encodeToString(value)
         is SocketMessageDeliveredPayload -> json.encodeToString(value)
+        is CallSessionIdPayload -> json.encodeToString(value)
         else -> error("Unsupported socket payload type: ${value::class.simpleName}")
     }
 }

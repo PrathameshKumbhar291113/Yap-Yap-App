@@ -44,6 +44,14 @@ object YapInsets {
     val bottomNavigationBar: WindowInsets
         @Composable
         get() = platformBottomNavigationBar()
+
+    /**
+     * Full-screen call overlays (ActiveCall, Incoming, Outgoing).
+     * Android is edge-to-edge and needs safe-area padding; iOS UIKit already insets content.
+     */
+    val fullScreenOverlay: WindowInsets
+        @Composable
+        get() = platformFullScreenOverlay()
 }
 
 @Composable
@@ -54,3 +62,6 @@ expect fun platformTopAppBarNested(): WindowInsets
 
 @Composable
 expect fun platformBottomNavigationBar(): WindowInsets
+
+@Composable
+expect fun platformFullScreenOverlay(): WindowInsets

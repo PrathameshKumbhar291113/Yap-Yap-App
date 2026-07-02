@@ -34,7 +34,7 @@ data class PushPayload(
     val callSessionId: String? get() = raw["callSessionId"]
     val callerId: String? get() = raw["callerId"]
     val callerName: String? get() = raw["callerName"]
-    val callType: String? get() = raw["callType"]
+    val callType: String? get() = raw["callType"] ?: raw["call_type"]
     val createdAt: String? get() = raw["createdAt"] ?: raw["created_at"]
 
     /** Matches backend conversation grouping: conv_{conversationId} */

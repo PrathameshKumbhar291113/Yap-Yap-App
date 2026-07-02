@@ -98,10 +98,41 @@
 
     <!-- Tabs -->
     <string name="tab_chats">Chats</string>
+    <string name="tab_calls">Calls</string>
     <string name="tab_profile">Profile</string>
 
     <!-- Accessibility -->
     <string name="cd_send">Send message</string>
     <string name="cd_back">Go back</string>
     <string name="cd_new_chat">Start new chat</string>
+    <string name="cd_voice_call">Start voice call</string>
+    <string name="cd_video_call">Start video call</string>
+
+    <!-- Calls -->
+    <string name="call_voice_short">Voice</string>
+    <string name="call_video_short">Video</string>
+    <string name="call_incoming">Incoming call</string>
+    <string name="call_incoming_video">Incoming video call</string>
+    <string name="call_outgoing">Outgoing call</string>
+    <string name="call_connected">Connected</string>
+    <string name="call_accept">Accept</string>
+    <string name="call_decline">Decline</string>
+    <string name="call_cancel">Cancel</string>
+    <string name="call_end">End call</string>
+    <string name="call_dismiss">Close</string>
+    <string name="call_mute">Mute</string>
+    <string name="call_camera">Camera</string>
+    <string name="call_speaker">Speaker</string>
+    <string name="call_flip_camera">Flip</string>
+    <string name="call_ongoing_voice">Ongoing Voice Call</string>
+    <string name="call_ongoing_video">Ongoing Video Call</string>
+    <string name="call_return_to_call">Return</string>
+    <string name="call_permission_rationale_title">Permission needed</string>
+    <string name="call_permission_rationale_mic">Yap Yap needs microphone access so the other person can hear you during calls.</string>
+    <string name="call_permission_rationale_camera">Yap Yap needs camera and microphone access for video calls.</string>
+    <string name="call_permission_settings_title">Permission required</string>
+    <string name="call_permission_settings_body">Enable the required permissions in Settings to place or receive calls.</string>
+    <string name="call_permission_grant">Grant Permission</string>
+    <string name="call_permission_not_now">Not Now</string>
+    <string name="call_permission_open_settings">Open Settings</string>
 </resources>

@@ -23,6 +23,9 @@ sealed class YapYapRoute {
     data object ConversationsList : YapYapRoute()
 
     @Serializable
+    data object CallLog : YapYapRoute()
+
+    @Serializable
     data object Profile : YapYapRoute()
 
     @Serializable
@@ -30,6 +33,11 @@ sealed class YapYapRoute {
         val conversationId: String,
         /** When true (notification/deep link), open pinned to the latest message instead of first unread. */
         val openAtLatest: Boolean = false,
+    ) : YapYapRoute()
+
+    @Serializable
+    data class Call(
+        val callSessionId: String,
     ) : YapYapRoute()
 }
 
@@ -41,11 +49,15 @@ object Route {
     const val REGISTER = "auth/register"
     const val MAIN = "main"
     const val CONVERSATIONS = "main/conversations"
+    const val CALLS = "main/calls"
     const val PROFILE = "main/profile"
     const val CHAT_PATTERN = "main/chat/{conversationId}"
     const val CHAT_ARG = "conversationId"
+    const val CALL_PATTERN = "main/call/{callSessionId}"
+    const val CALL_ARG = "callSessionId"
 
     fun chat(conversationId: String): String = "main/chat/$conversationId"
+    fun call(callSessionId: String): String = "main/call/$callSessionId"
 }
 
 fun YapYapRoute.toNavRoute(): String = when (this) {
@@ -55,6 +67,8 @@ fun YapYapRoute.toNavRoute(): String = when (this) {
     YapYapRoute.Register -> Route.REGISTER
     YapYapRoute.MainGraph -> Route.MAIN
     YapYapRoute.ConversationsList -> Route.CONVERSATIONS
+    YapYapRoute.CallLog -> Route.CALLS
     YapYapRoute.Profile -> Route.PROFILE
     is YapYapRoute.Chat -> Route.chat(conversationId)
+    is YapYapRoute.Call -> Route.call(callSessionId)
 }

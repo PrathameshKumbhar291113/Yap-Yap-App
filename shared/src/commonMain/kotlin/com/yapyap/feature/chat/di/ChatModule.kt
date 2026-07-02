@@ -70,6 +70,8 @@ val chatModule = module {
             activeConversationTracker = get(),
             pushNotificationCoordinator = get(),
             receiverRepairGateway = get(),
+            startOutgoingCallUseCase = get(),
+            permissionPromptController = get(),
         )
     }
 }

@@ -1,6 +1,7 @@
 package com.yapyap.core.diagnostics
 
 import co.touchlab.kermit.Logger
+import kotlin.time.Clock
 
 /**
  * Phase-3 runtime tracing. Filter logcat / Xcode console with tag [TAG].
@@ -16,7 +17,7 @@ object RuntimeDiagnostics {
         log.i { "[$component] $message" }
     }
 
-    /** Method-entry trace with timestamp, thread, pid, and top stack frames. */
+    /** Method-entry trace with timestamp and optional details. */
     fun enter(component: String, method: String, details: String = "") {
         val suffix = if (details.isBlank()) "" else " $details"
         log.i { "[$component] ENTER $method ${runtimeContext()}$suffix" }
@@ -32,6 +33,6 @@ object RuntimeDiagnostics {
             .joinToString(" <- ") { it.trim() }
         log.i { "[$component] STACK $label $frames" }
     }
-}
 
-expect fun runtimeContext(): String
+    private fun runtimeContext(): String = "ts=${Clock.System.now().toEpochMilliseconds()}"
+}

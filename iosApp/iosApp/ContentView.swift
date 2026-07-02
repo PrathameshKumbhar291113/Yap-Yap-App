@@ -25,8 +25,11 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         YapPushBridgeInstaller.install()
+        YapCallKitManager.install()
+        YapPushKitManager.shared.start()
 
-        if let userInfo = launchOptions?[.remoteNotification] as? [AnyHashable: Any] {
+        if YapProvisioningCapabilities.isRemoteNotificationsAvailable,
+           let userInfo = launchOptions?[.remoteNotification] as? [AnyHashable: Any] {
             YapPushManager.shared.handleLaunchNotification(userInfo: userInfo)
         }
 
@@ -37,6 +40,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
     ) {
+        guard YapProvisioningCapabilities.isRemoteNotificationsAvailable else { return }
         diag("Firebase", "APNs deviceToken bytes=\(deviceToken.count)")
         YapPushManager.shared.handleDeviceToken(deviceToken)
     }
@@ -45,6 +49,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didFailToRegisterForRemoteNotificationsWithError error: Error
     ) {
+        guard YapProvisioningCapabilities.isRemoteNotificationsAvailable else { return }
         diag("Firebase", "APNs registration failed: \(error.localizedDescription)")
         print("[PushNotifications] remote registration unavailable: \(error.localizedDescription)")
         IosPushBridge.shared.deliverToken(token: nil)
@@ -55,6 +60,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         didReceiveRemoteNotification userInfo: [AnyHashable: Any],
         fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
     ) {
+        guard YapProvisioningCapabilities.isRemoteNotificationsAvailable else {
+            completionHandler(.noData)
+            return
+        }
         diag("RemoteNotification", "didReceiveRemoteNotification keys=\(userInfo.keys)")
         YapPushManager.shared.handleRemoteNotification(userInfo: userInfo)
         completionHandler(.newData)

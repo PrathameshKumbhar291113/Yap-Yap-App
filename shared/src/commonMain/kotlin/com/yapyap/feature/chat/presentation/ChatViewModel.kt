@@ -7,6 +7,10 @@ import com.yapyap.core.realtime.ActiveConversationTracker
 import com.yapyap.core.realtime.ChatRealtimeClient
 import com.yapyap.feature.auth.domain.model.AuthState
 import com.yapyap.feature.auth.domain.usecase.ObserveAuthStateUseCase
+import com.yapyap.feature.call.domain.entity.CallParticipant
+import com.yapyap.feature.call.domain.entity.CallType
+import com.yapyap.feature.call.domain.usecase.StartOutgoingCallUseCase
+import com.yapyap.feature.call.presentation.CallPermissionPromptController
 import com.yapyap.feature.conversations.domain.entity.displayTitle
 import com.yapyap.feature.conversations.domain.usecase.GetConversationsUseCase
 import com.yapyap.feature.chat.domain.usecase.DeleteOutgoingMessageUseCase
@@ -48,6 +52,8 @@ class ChatViewModel(
     private val activeConversationTracker: ActiveConversationTracker,
     private val pushNotificationCoordinator: PushNotificationCoordinator,
     private val receiverRepairGateway: ReceiverRepairGateway,
+    private val startOutgoingCallUseCase: StartOutgoingCallUseCase,
+    private val permissionPromptController: CallPermissionPromptController,
 ) : ViewModel() {
     private val isInitialLoading = MutableStateFlow(true)
     private val initialError = MutableStateFlow<String?>(null)
@@ -276,6 +282,34 @@ class ChatViewModel(
     fun deleteMessage(clientMessageId: String) {
         viewModelScope.launch {
             deleteOutgoingMessageUseCase(clientMessageId)
+        }
+    }
+
+    fun startVoiceCall() {
+        startOutgoingCall(callType = CallType.Voice)
+    }
+
+    fun startVideoCall() {
+        startOutgoingCall(callType = CallType.Video)
+    }
+
+    private fun startOutgoingCall(callType: CallType) {
+        viewModelScope.launch {
+            if (!permissionPromptController.ensurePermissions(callType)) return@launch
+            val authState = observeAuthStateUseCase().value as? AuthState.Authenticated ?: return@launch
+            val conversation = getConversationsUseCase().first().find { it.id == conversationId } ?: return@launch
+            val remoteUser = conversation.partner ?: return@launch
+            sendError.value = null
+            startOutgoingCallUseCase(
+                conversationId = conversationId,
+                callType = callType,
+                remoteUser = CallParticipant(
+                    userId = remoteUser.id,
+                    displayName = conversation.displayTitle,
+                ),
+            ).onFailure { error ->
+                sendError.value = error.message ?: UserMessages.UNKNOWN
+            }
         }
     }
 

@@ -177,6 +177,27 @@ class SocketChatRealtimeClient(
         return result
     }
 
+    override suspend fun acceptCall(callSessionId: String): Result<Unit> {
+        return emitCallAction(SocketConstants.CALL_ACCEPT, callSessionId)
+    }
+
+    override suspend fun rejectCall(callSessionId: String): Result<Unit> {
+        return emitCallAction(SocketConstants.CALL_REJECT, callSessionId)
+    }
+
+    override suspend fun endCall(callSessionId: String): Result<Unit> {
+        return emitCallAction(SocketConstants.CALL_END, callSessionId)
+    }
+
+    private suspend fun emitCallAction(eventName: String, callSessionId: String): Result<Unit> {
+        if (!isReady || !nativeConnected) {
+            return Result.failure(IllegalStateException("Socket not connected"))
+        }
+        val payload = socketEventParser.encodePayload(CallSessionIdPayload(callSessionId = callSessionId))
+        return emitWithAck(eventName, payload)
+            .let { raw -> socketEventParser.parseAckSuccess(raw ?: return Result.failure(IllegalStateException("Empty socket ack"))) }
+    }
+
     private suspend fun connectInternal(accessToken: String) {
         connectMutex.withLock {
             nativeConnected = false
@@ -258,6 +279,36 @@ class SocketChatRealtimeClient(
                 runCatching { socketEventParser.parsePresenceUpdate(raw) }
                     .onSuccess { _events.emit(it) }
                     .onFailure { error -> log.w(error) { "failed to parse presence:update: $raw" } }
+            }
+            SocketConstants.CALL_INCOMING -> {
+                val raw = payload ?: return
+                runCatching { socketEventParser.parseCallIncoming(raw) }
+                    .onSuccess { _events.emit(it) }
+                    .onFailure { error -> log.w(error) { "failed to parse call:incoming: $raw" } }
+            }
+            SocketConstants.CALL_ACCEPTED -> {
+                val raw = payload ?: return
+                runCatching { socketEventParser.parseCallAccepted(raw) }
+                    .onSuccess { _events.emit(it) }
+                    .onFailure { error -> log.w(error) { "failed to parse call:accepted: $raw" } }
+            }
+            SocketConstants.CALL_REJECTED -> {
+                val raw = payload ?: return
+                runCatching { socketEventParser.parseCallRejected(raw) }
+                    .onSuccess { _events.emit(it) }
+                    .onFailure { error -> log.w(error) { "failed to parse call:rejected: $raw" } }
+            }
+            SocketConstants.CALL_ENDED -> {
+                val raw = payload ?: return
+                runCatching { socketEventParser.parseCallEnded(raw) }
+                    .onSuccess { _events.emit(it) }
+                    .onFailure { error -> log.w(error) { "failed to parse call:ended: $raw" } }
+            }
+            SocketConstants.CALL_SYNC -> {
+                val raw = payload ?: return
+                runCatching { socketEventParser.parseCallSync(raw) }
+                    .onSuccess { _events.emit(it) }
+                    .onFailure { error -> log.w(error) { "failed to parse call:sync: $raw" } }
             }
         }
     }

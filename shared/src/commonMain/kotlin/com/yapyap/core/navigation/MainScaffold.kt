@@ -19,6 +19,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import org.jetbrains.compose.resources.stringResource
 import yapyap.shared.generated.resources.Res
+import yapyap.shared.generated.resources.tab_calls
 import yapyap.shared.generated.resources.tab_chats
 import yapyap.shared.generated.resources.tab_profile
 
@@ -30,7 +31,9 @@ fun MainScaffold(
 ) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
-    val showBottomBar = currentRoute == Route.CONVERSATIONS || currentRoute == Route.PROFILE
+    val showBottomBar = currentRoute == Route.CONVERSATIONS ||
+        currentRoute == Route.CALLS ||
+        currentRoute == Route.PROFILE
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -63,6 +66,37 @@ fun MainScaffold(
                             )
                         },
                         label = { Text(stringResource(Res.string.tab_chats)) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.primary,
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
+                    )
+                    NavigationBarItem(
+                        selected = currentRoute == Route.CALLS,
+                        onClick = {
+                            navController.navigate(Route.CALLS) {
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    saveState = true
+                                }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
+                        icon = {
+                            YapIcon(
+                                resource = YapDrawable.Call,
+                                contentDescription = stringResource(Res.string.tab_calls),
+                                tint = if (currentRoute == Route.CALLS) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                            )
+                        },
+                        label = { Text(stringResource(Res.string.tab_calls)) },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = MaterialTheme.colorScheme.primary,
                             selectedTextColor = MaterialTheme.colorScheme.primary,

@@ -1,5 +1,9 @@
 package com.yapyap.core.realtime
 
+import com.yapyap.core.call.CallDiagnostics
+import com.yapyap.core.call.CallSignalingEvent
+import com.yapyap.core.call.CallSignalingEventMapper
+import com.yapyap.core.call.CallSignalingRepository
 import com.yapyap.core.diagnostics.OutboxPipelineTrace
 import com.yapyap.core.diagnostics.ReceiverSyncTrace
 import com.yapyap.core.diagnostics.RuntimeDiagnostics
@@ -29,6 +33,7 @@ class ChatRealtimeRepository(
     private val deduplicator: PushMessageDeduplicator,
     private val pushNotificationCoordinator: Lazy<PushNotificationCoordinator>,
     private val deliveryAckService: MessageDeliveryAcknowledgementGateway,
+    private val callSignalingRepository: Lazy<CallSignalingRepository>,
 ) {
     private var currentUserId: Int? = null
     private var appScope: CoroutineScope? = null
@@ -57,7 +62,42 @@ class ChatRealtimeRepository(
             is SocketEvent.MessageStatus -> handleMessageStatus(event)
             is SocketEvent.Typing -> handleTyping(event)
             is SocketEvent.PresenceUpdate -> handlePresence(event)
+            is SocketEvent.CallIncoming -> {
+                if (event.callerId == currentUserId) {
+                    CallDiagnostics.stage(
+                        stage = "CALL_INVITE_IGNORED",
+                        callSessionId = event.callSessionId,
+                        extra = mapOf("reason" to "self_caller_socket"),
+                    )
+                    return
+                }
+                forwardCallEvent(event)
+            }
+            is SocketEvent.CallAccepted,
+            is SocketEvent.CallRejected,
+            is SocketEvent.CallEnded,
+            is SocketEvent.CallSync,
+            -> forwardCallEvent(event)
         }
+    }
+
+    private fun forwardCallEvent(event: SocketEvent) {
+        val signalingEvent = CallSignalingEventMapper.fromSocketEvent(event) ?: return
+        CallDiagnostics.stage(
+            stage = "CALL_SOCKET_FORWARD_TO_SIGNALING",
+            callSessionId = signalingEvent.callSessionIdOrNull(),
+            extra = mapOf("type" to signalingEvent::class.simpleName.orEmpty()),
+        )
+        callSignalingRepository.value.handleEvent(signalingEvent)
+    }
+
+    private fun CallSignalingEvent.callSessionIdOrNull(): String? = when (this) {
+        is CallSignalingEvent.Answer -> callSessionId
+        is CallSignalingEvent.End -> callSessionId
+        is CallSignalingEvent.Sync -> callSessionId
+        is CallSignalingEvent.IceCandidate -> callSessionId
+        is CallSignalingEvent.Invite -> callSessionId
+        is CallSignalingEvent.Reject -> callSessionId
     }
 
     private fun handleSocketReady(event: SocketEvent.Ready) {
@@ -182,8 +222,10 @@ class ChatRealtimeRepository(
         if (isFromOther && isViewing) {
             message.id?.let { messageId ->
                 appScope?.launch {
-                    chatRepository.markRead(event.conversationId, messageId)
-                        .onSuccess { conversationRepository.applyConversationRead(event.conversationId) }
+                    val readResult = chatRepository.markRead(event.conversationId, messageId)
+                    if (readResult.isSuccess) {
+                        conversationRepository.applyConversationRead(event.conversationId)
+                    }
                 }
             }
         }

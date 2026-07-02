@@ -1,6 +1,10 @@
 package com.yapyap.core.push
 
 import co.touchlab.kermit.Logger
+import com.yapyap.core.call.CallCoordinator
+import com.yapyap.core.call.CallDiagnostics
+import com.yapyap.core.call.CallNativeCoordinator
+import com.yapyap.core.call.CallNativeIncomingRequest
 import com.yapyap.core.diagnostics.RuntimeDiagnostics
 import com.yapyap.core.datastore.TokenStorage
 import com.yapyap.core.push.model.LocalPushNotification
@@ -21,6 +25,7 @@ import com.yapyap.core.realtime.shouldAckInboundMessage
 import com.yapyap.core.util.DispatcherProvider
 import com.yapyap.feature.auth.domain.model.AuthState
 import com.yapyap.feature.auth.domain.usecase.ObserveAuthStateUseCase
+import com.yapyap.feature.call.domain.entity.CallType
 import com.yapyap.feature.chat.domain.repository.ChatRepository
 import com.yapyap.feature.conversations.domain.repository.ConversationRepository
 import com.yapyap.feature.devices.data.repository.DeviceRepository
@@ -46,6 +51,8 @@ class PushNotificationCoordinator(
     private val deliveryAckService: MessageDeliveryAcknowledgementGateway,
     private val chatRealtimeClient: ChatRealtimeClient,
     private val receiverRepairGateway: Lazy<ReceiverRepairGateway>,
+    private val callCoordinator: Lazy<CallCoordinator>,
+    private val callNativeCoordinator: Lazy<CallNativeCoordinator>,
     private val notificationStore: ConversationNotificationStore,
     private val dispatcherProvider: DispatcherProvider,
 ) {
@@ -564,10 +571,47 @@ class PushNotificationCoordinator(
         delivery: PushDeliveryContext,
         fromUserTap: Boolean,
     ) {
+        val callSessionId = payload.callSessionId
+        if (callSessionId.isNullOrBlank()) {
+            RuntimeDiagnostics.event("PushCoordinator", "CALL_INCOMING_SKIP reason=missing_callSessionId")
+            return
+        }
+
+        val localUserId = (observeAuthStateUseCase().value as? AuthState.Authenticated)?.user?.id
+        val callerId = payload.callerId?.toIntOrNull()
+        if (localUserId != null && callerId == localUserId) {
+            RuntimeDiagnostics.event("PushCoordinator", "CALL_INCOMING_SKIP reason=self_caller")
+            CallDiagnostics.stage(
+                stage = "CALL_INVITE_IGNORED",
+                callSessionId = callSessionId,
+                extra = mapOf("reason" to "self_caller_push"),
+            )
+            return
+        }
+
+        callCoordinator.value.onIncomingPush(
+            callSessionId = callSessionId,
+            callerId = payload.callerId?.toIntOrNull(),
+            callerName = payload.callerName,
+            callType = CallType.fromRaw(payload.callType),
+            conversationId = payload.conversationId?.toIntOrNull(),
+        )
+
+        val nativeRequest = CallNativeIncomingRequest(
+            callSessionId = callSessionId,
+            callerDisplayName = payload.callerName.orEmpty().ifBlank { "Incoming call" },
+            callerId = payload.callerId?.toIntOrNull(),
+            isVideoCall = CallType.fromRaw(payload.callType) == CallType.Video,
+            conversationId = payload.conversationId?.toIntOrNull(),
+        )
         if (fromUserTap) {
-            payload.callSessionId?.let { sessionId ->
-                requestNavigation(PushNavigationTarget.IncomingCall(sessionId))
-            }
+            callNativeCoordinator.value.presentIncomingFromPushOpened(nativeRequest)
+        } else {
+            callNativeCoordinator.value.presentIncomingFromPush(nativeRequest)
+        }
+
+        if (fromUserTap) {
+            requestNavigation(PushNavigationTarget.IncomingCall(callSessionId))
             return
         }
 

@@ -5,7 +5,17 @@
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>UIBackgroundModes</key>
-	<array/>
+	<array>
+		<string>voip</string>
+		<string>remote-notification</string>
+		<string>audio</string>
+	</array>
+	<key>YapCallKitEnabled</key>
+	<true/>
+	<key>YapPushKitEnabled</key>
+	<true/>
+	<key>YapRemoteNotificationsEnabled</key>
+	<true/>
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key>

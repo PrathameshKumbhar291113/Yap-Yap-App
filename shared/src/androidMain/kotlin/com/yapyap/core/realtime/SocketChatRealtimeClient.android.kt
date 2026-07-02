@@ -264,6 +264,38 @@ class SocketChatRealtimeClient(
         }
     }
 
+    override suspend fun acceptCall(callSessionId: String): Result<Unit> {
+        return emitCallAction(SocketConstants.CALL_ACCEPT, callSessionId)
+    }
+
+    override suspend fun rejectCall(callSessionId: String): Result<Unit> {
+        return emitCallAction(SocketConstants.CALL_REJECT, callSessionId)
+    }
+
+    override suspend fun endCall(callSessionId: String): Result<Unit> {
+        return emitCallAction(SocketConstants.CALL_END, callSessionId)
+    }
+
+    private suspend fun emitCallAction(eventName: String, callSessionId: String): Result<Unit> {
+        val currentSocket = socket
+        if (!isReady || currentSocket == null || !currentSocket.connected()) {
+            return Result.failure(IllegalStateException("Socket not connected"))
+        }
+        val payload = CallSessionIdPayload(callSessionId = callSessionId)
+        return suspendCancellableCoroutine { continuation ->
+            val jsonPayload = JSONObject(socketEventParser.encodePayload(payload))
+            currentSocket.emit(eventName, jsonPayload, io.socket.client.Ack { args ->
+                if (continuation.isCancelled) return@Ack
+                val raw = args.firstOrNull()?.toJsonString()
+                if (raw == null) {
+                    continuation.resume(Result.failure(IllegalStateException("Empty socket ack")))
+                    return@Ack
+                }
+                continuation.resume(socketEventParser.parseAckSuccess(raw))
+            })
+        }
+    }
+
     private suspend fun connectInternal(accessToken: String) {
         connectMutex.withLock {
             teardownSocket()
@@ -409,6 +441,63 @@ class SocketChatRealtimeClient(
                 .onSuccess { event -> scope.launch { _events.emit(event) } }
                 .onFailure { error -> log.w(error) { "failed to parse presence:update: $raw" } }
         }
+
+        currentSocket.on(EVENT_CALL_INCOMING) { args ->
+            emitParsedCallEvent(args, socketEventParser::parseCallIncoming)
+        }
+
+        currentSocket.on(EVENT_CALL_ACCEPTED) { args ->
+            emitParsedCallEvent(args, socketEventParser::parseCallAccepted)
+        }
+
+        currentSocket.on(EVENT_CALL_REJECTED) { args ->
+            emitParsedCallEvent(args, socketEventParser::parseCallRejected)
+        }
+
+        currentSocket.on(EVENT_CALL_ENDED) { args ->
+            emitParsedCallEvent(args, socketEventParser::parseCallEnded)
+        }
+
+        currentSocket.on(EVENT_CALL_SYNC) { args ->
+            emitParsedCallEvent(args, socketEventParser::parseCallSync)
+        }
+    }
+
+    private fun emitParsedCallEvent(
+        args: Array<out Any>,
+        parser: (String) -> SocketEvent,
+    ) {
+        val raw = args.firstOrNull()?.toJsonString() ?: return
+        runCatching { parser(raw) }
+            .onSuccess { event ->
+                CallDiagnosticsBridge.logCallSocketReceived(event)
+                scope.launch { _events.emit(event) }
+            }
+            .onFailure { error -> log.w(error) { "failed to parse call socket event: $raw" } }
+    }
+
+    private object CallDiagnosticsBridge {
+        fun logCallSocketReceived(event: SocketEvent) {
+            when (event) {
+                is SocketEvent.CallIncoming -> com.yapyap.core.call.CallDiagnostics.socketReceived(
+                    event = EVENT_CALL_INCOMING,
+                    callSessionId = event.callSessionId,
+                )
+                is SocketEvent.CallAccepted -> com.yapyap.core.call.CallDiagnostics.socketReceived(
+                    event = EVENT_CALL_ACCEPTED,
+                    callSessionId = event.callSessionId,
+                )
+                is SocketEvent.CallRejected -> com.yapyap.core.call.CallDiagnostics.socketReceived(
+                    event = EVENT_CALL_REJECTED,
+                    callSessionId = event.callSessionId,
+                )
+                is SocketEvent.CallEnded -> com.yapyap.core.call.CallDiagnostics.socketReceived(
+                    event = EVENT_CALL_ENDED,
+                    callSessionId = event.callSessionId,
+                )
+                else -> Unit
+            }
+        }
     }
 
     private fun emitConversationEvent(eventName: String, conversationId: Int) {
@@ -470,6 +559,14 @@ class SocketChatRealtimeClient(
         const val EVENT_TYPING_STOP = "typing:stop"
         const val EVENT_TYPING = "typing"
         const val EVENT_PRESENCE_UPDATE = "presence:update"
+        const val EVENT_CALL_ACCEPT = "call:accept"
+        const val EVENT_CALL_REJECT = "call:reject"
+        const val EVENT_CALL_END = "call:end"
+        const val EVENT_CALL_INCOMING = "call:incoming"
+        const val EVENT_CALL_ACCEPTED = "call:accepted"
+        const val EVENT_CALL_REJECTED = "call:rejected"
+        const val EVENT_CALL_ENDED = "call:ended"
+        const val EVENT_CALL_SYNC = "call:sync"
     }
 }
 

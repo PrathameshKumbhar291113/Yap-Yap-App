@@ -30,7 +30,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import com.yapyap.feature.call.presentation.YapCallTopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -126,10 +126,7 @@ fun ProfileScreen(
     Scaffold(
         contentWindowInsets = YapZeroWindowInsets,
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(Res.string.profile)) },
-                windowInsets = YapInsets.topAppBarNested,
-            )
+            YapCallTopAppBar(title = stringResource(Res.string.profile))
         },
     ) { innerPadding ->
         when (val state = uiState) {

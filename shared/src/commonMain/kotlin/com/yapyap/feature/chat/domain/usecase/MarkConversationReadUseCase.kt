@@ -8,7 +8,10 @@ class MarkConversationReadUseCase(
     private val conversationRepository: ConversationRepository,
 ) {
     suspend operator fun invoke(conversationId: Int, messageId: Int? = null): Result<Unit> {
-        return chatRepository.markRead(conversationId, messageId)
-            .onSuccess { conversationRepository.applyConversationRead(conversationId) }
+        val result = chatRepository.markRead(conversationId, messageId)
+        if (result.isSuccess) {
+            conversationRepository.applyConversationRead(conversationId)
+        }
+        return result
     }
 }

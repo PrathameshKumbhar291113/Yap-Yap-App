@@ -2,6 +2,7 @@ package com.yapyap.core.navigation
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Modifier
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -12,6 +13,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
+import com.yapyap.core.call.CallCoordinator
 import com.yapyap.core.diagnostics.RuntimeDiagnostics
 import com.yapyap.core.datastore.TokenStorage
 import com.yapyap.core.push.PushNavigationRouter
@@ -38,6 +40,7 @@ fun YapYapNavHost(
     sessionManager: SessionManager = koinInject(),
     incomingMessageNotifier: IncomingMessageNotifier = koinInject(),
     pushNavigationRouter: PushNavigationRouter = koinInject(),
+    callCoordinator: CallCoordinator = koinInject(),
     chatRealtimeClient: ChatRealtimeClient = koinInject(),
     tokenStorage: TokenStorage = koinInject(),
 ) {
@@ -89,7 +92,10 @@ fun YapYapNavHost(
                     tokenStorage = tokenStorage,
                 )
                 is PushNavigationTarget.IncomingCall -> {
-                    snackbarHostState.showSnackbar("Incoming call from notification")
+                    executeIncomingCallNavigation(
+                        target = target,
+                        callCoordinator = callCoordinator,
+                    )
                 }
             }
         }
@@ -112,7 +118,10 @@ fun YapYapNavHost(
                     tokenStorage = tokenStorage,
                 )
                 is PushNavigationTarget.IncomingCall -> {
-                    snackbarHostState.showSnackbar("Incoming call from notification")
+                    executeIncomingCallNavigation(
+                        target = target,
+                        callCoordinator = callCoordinator,
+                    )
                 }
             }
         }
@@ -182,6 +191,18 @@ fun YapYapNavHost(
                 }
             }
 
+            composable(Route.CALLS) {
+                MainScaffold(navController = navController) { contentPadding ->
+                    Box(modifier = contentPadding.fillMaxSize()) {
+                        com.yapyap.feature.call.presentation.CallLogScreen(
+                            onOpenChat = { conversationId ->
+                                navController.navigate(YapYapRoute.Chat(conversationId, openAtLatest = true))
+                            },
+                        )
+                    }
+                }
+            }
+
             composable(Route.PROFILE) {
                 MainScaffold(navController = navController) { contentPadding ->
                     Box(modifier = contentPadding.fillMaxSize()) {
@@ -214,8 +235,34 @@ fun YapYapNavHost(
                     onBack = { navController.popBackStack() },
                 )
             }
+
+            composable<YapYapRoute.Call> { backStackEntry ->
+                val callRoute = backStackEntry.toRoute<YapYapRoute.Call>()
+                LaunchedEffect(callRoute.callSessionId) {
+                    RuntimeDiagnostics.enter(
+                        "Navigation",
+                        "CallDeepLink.compose",
+                        "CALL_OPENED callSessionId=${callRoute.callSessionId}",
+                    )
+                    callCoordinator.onIncomingFromNavigation(callRoute.callSessionId)
+                }
+                // TODO(Phase 2): Remove empty Box once deep-link route only triggers overlay without placeholder screen.
+                Box(modifier = Modifier.fillMaxSize())
+            }
         }
     }
+}
+
+private suspend fun executeIncomingCallNavigation(
+    target: PushNavigationTarget.IncomingCall,
+    callCoordinator: CallCoordinator,
+) {
+    RuntimeDiagnostics.enter(
+        "Navigation",
+        "executeIncomingCallNavigation",
+        "callSessionId=${target.callSessionId}",
+    )
+    callCoordinator.onIncomingFromNavigation(target.callSessionId)
 }
 
 private const val MAX_NOTIFICATION_PREVIEW_LENGTH = 80

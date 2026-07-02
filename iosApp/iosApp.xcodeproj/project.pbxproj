@@ -10,6 +10,7 @@
 		B2E8F0032A00000100000001 /* SocketIO in Frameworks */ = {isa = PBXBuildFile; productRef = B2E8F0022A00000100000001 /* SocketIO */; };
 		B2E8F0132A00000100000003 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = B2E8F0112A00000100000003 /* FirebaseCore */; };
 		B2E8F0142A00000100000003 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = B2E8F0122A00000100000003 /* FirebaseMessaging */; };
+		B2E8F0222A00000100000004 /* LiveKit in Frameworks */ = {isa = PBXBuildFile; productRef = B2E8F0212A00000100000004 /* LiveKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -22,6 +23,8 @@
 			membershipExceptions = (
 				"Info-Debug.plist",
 				Info.plist,
+				YapYap.entitlements,
+				"YapYap-Debug.entitlements",
 			);
 			target = 1F954B4F834FE0F0726071A9 /* iosApp */;
 		};
@@ -51,6 +54,7 @@
 				B2E8F0032A00000100000001 /* SocketIO in Frameworks */,
 				B2E8F0132A00000100000003 /* FirebaseCore in Frameworks */,
 				B2E8F0142A00000100000003 /* FirebaseMessaging in Frameworks */,
+				B2E8F0222A00000100000004 /* LiveKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -98,6 +102,7 @@
 				B2E8F0022A00000100000001 /* SocketIO */,
 				B2E8F0112A00000100000003 /* FirebaseCore */,
 				B2E8F0122A00000100000003 /* FirebaseMessaging */,
+				B2E8F0212A00000100000004 /* LiveKit */,
 			);
 			productName = iosApp;
 			productReference = CACF594F6966BDD0368C585D /* YapYap.app */;
@@ -130,6 +135,7 @@
 			packageReferences = (
 				B2E8F0012A00000100000001 /* XCRemoteSwiftPackageReference "socket" */,
 				B2E8F0102A00000100000003 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+				B2E8F0202A00000100000004 /* XCRemoteSwiftPackageReference "client-sdk-swift" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 6C8A446F98A2CFD1D32E9C07 /* Products */;
@@ -197,16 +203,17 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = iosApp/Info.plist;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Yap Yap needs camera access for video calls.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Yap Yap needs microphone access for voice and video calls.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.yapyap.YapYap;
+				PRODUCT_BUNDLE_IDENTIFIER = com.prathamesh.yapyap.dev;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -285,7 +292,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = iosApp/YapYap.entitlements;
+				CODE_SIGN_ENTITLEMENTS = "iosApp/YapYap-Debug.entitlements";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_ASSET_PATHS = "\"iosApp/Preview Content\"";
@@ -293,16 +300,17 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "iosApp/Info-Debug.plist";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Yap Yap needs camera access for video calls.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Yap Yap needs microphone access for voice and video calls.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.yapyap.YapYap;
+				PRODUCT_BUNDLE_IDENTIFIER = com.prathamesh.yapyap.dev;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -409,6 +417,14 @@
 				minimumVersion = 11.0.0;
 			};
 		};
+		B2E8F0202A00000100000004 /* XCRemoteSwiftPackageReference "client-sdk-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/livekit/client-sdk-swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.15.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -426,6 +442,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = B2E8F0102A00000100000003 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseMessaging;
+		};
+		B2E8F0212A00000100000004 /* LiveKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B2E8F0202A00000100000004 /* XCRemoteSwiftPackageReference "client-sdk-swift" */;
+			productName = LiveKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -237,14 +237,14 @@ class ReceiverRepairServiceTest {
         override suspend fun createDirectConversation(contact: String): Result<Conversation> =
             Result.failure(UnsupportedOperationException())
 
-        override fun applyIncomingMessage(
+        override suspend fun applyIncomingMessage(
             conversationId: Int,
             message: Message,
             currentUserId: Int?,
             isViewingConversation: Boolean,
         ): Boolean = false
 
-        override fun applyConversationRead(conversationId: Int) = Unit
+        override suspend fun applyConversationRead(conversationId: Int) = Unit
 
         override fun snapshotConversations(): List<Conversation> = state.value
     }

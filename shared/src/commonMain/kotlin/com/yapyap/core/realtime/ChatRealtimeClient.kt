@@ -27,4 +27,13 @@ interface ChatRealtimeClient {
     suspend fun markRead(conversationId: Int, messageId: Int?): Result<Unit>
 
     suspend fun markDelivered(conversationId: Int, messageId: Int): Result<Unit>
+
+    suspend fun acceptCall(callSessionId: String): Result<Unit> =
+        Result.failure(UnsupportedOperationException("Call signaling not supported"))
+
+    suspend fun rejectCall(callSessionId: String): Result<Unit> =
+        Result.failure(UnsupportedOperationException("Call signaling not supported"))
+
+    suspend fun endCall(callSessionId: String): Result<Unit> =
+        Result.failure(UnsupportedOperationException("Call signaling not supported"))
 }

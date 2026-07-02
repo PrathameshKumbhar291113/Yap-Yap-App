@@ -79,6 +79,14 @@ buildkonfig {
         buildConfigField(BOOLEAN, "IS_DEBUG", "false")
     }
 
+    // Internal testing release APK: Android uses the same LAN/local URLs as debug (gradle.properties).
+    targetConfigs("release") {
+        create("android") {
+            buildConfigField(STRING, "BASE_URL", debugApiHostAndroid)
+            buildConfigField(STRING, "SOCKET_URL", debugSocketHostAndroid)
+        }
+    }
+
     targetConfigs("debug") {
         create("android") {
             buildConfigField(STRING, "BASE_URL", debugApiHostAndroid)
@@ -101,6 +109,7 @@ kotlin {
         iosTarget.binaries.framework {
             baseName = "Shared"
             isStatic = true
+            linkerOpts("-framework", "AVFoundation")
         }
     }
     
@@ -133,6 +142,8 @@ kotlin {
             implementation(project.dependencies.platform(libs.firebase.bom))
             implementation(libs.firebase.messaging)
             implementation(libs.kotlinx.coroutines.play.services)
+            implementation(libs.livekit.android)
+            implementation(libs.livekit.android.camerax)
         }
         commonMain.dependencies {
             implementation(libs.compose.runtime)
@@ -175,6 +186,7 @@ kotlin {
             implementation(libs.ktor.client.content.negotiation)
             implementation(libs.ktor.serialization.kotlinx.json)
             implementation(libs.ktor.client.auth)
+            implementation(libs.multiplatform.settings.no.arg)
         }
     }
 }

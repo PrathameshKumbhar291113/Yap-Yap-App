@@ -8,4 +8,5 @@ data class ApiResponse<T>(
     val message: String? = null,
     val data: T? = null,
     val errorCode: String? = null,
+    val details: ApiErrorDetails? = null,
 )

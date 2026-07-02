@@ -114,6 +114,11 @@ final class YapSocketManager {
         listenServerEvent(client, event: SocketConstants.shared.MESSAGE_STATUS)
         listenServerEvent(client, event: SocketConstants.shared.TYPING)
         listenServerEvent(client, event: SocketConstants.shared.PRESENCE_UPDATE)
+        listenServerEvent(client, event: SocketConstants.shared.CALL_INCOMING)
+        listenServerEvent(client, event: SocketConstants.shared.CALL_ACCEPTED)
+        listenServerEvent(client, event: SocketConstants.shared.CALL_REJECTED)
+        listenServerEvent(client, event: SocketConstants.shared.CALL_ENDED)
+        listenServerEvent(client, event: SocketConstants.shared.CALL_SYNC)
     }
 
     private func listenServerEvent(_ client: SocketIOClient, event: String) {

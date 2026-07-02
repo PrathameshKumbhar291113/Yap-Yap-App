@@ -6,6 +6,8 @@ import com.yapyap.core.diagnostics.RuntimeDiagnostics
 import com.yapyap.core.push.PushNotificationChannels
 import com.yapyap.core.push.bootstrapAndroidPush
 import com.yapyap.core.push.registerYapAppLifecycleCallbacks
+import com.yapyap.core.call.YapTelecomRegistry
+import com.yapyap.core.call.bootstrapAndroidCallStack
 import org.koin.android.ext.koin.androidContext
 import com.yapyap.core.di.initKoin
 
@@ -20,6 +22,8 @@ class YapYapApplication : Application() {
             FirebaseApp.initializeApp(this)
         }
         PushNotificationChannels.create(this)
+        YapTelecomRegistry.registerPhoneAccount(this)
+        bootstrapAndroidCallStack()
         bootstrapAndroidPush()
         registerYapAppLifecycleCallbacks()
     }
