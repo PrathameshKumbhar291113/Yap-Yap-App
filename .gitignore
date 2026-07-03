@@ -5,6 +5,11 @@
 xcuserdata
 !src/**/build/
 local.properties
+*.apk
+androidApp/release/
+androidApp/keystore/
+androidApp/keystore/*.jks
+androidApp/keystore/keystore.properties
 .idea
 .DS_Store
 captures

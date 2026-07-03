@@ -79,14 +79,6 @@ buildkonfig {
         buildConfigField(BOOLEAN, "IS_DEBUG", "false")
     }
 
-    // Internal testing release APK: Android uses the same LAN/local URLs as debug (gradle.properties).
-    targetConfigs("release") {
-        create("android") {
-            buildConfigField(STRING, "BASE_URL", debugApiHostAndroid)
-            buildConfigField(STRING, "SOCKET_URL", debugSocketHostAndroid)
-        }
-    }
-
     targetConfigs("debug") {
         create("android") {
             buildConfigField(STRING, "BASE_URL", debugApiHostAndroid)
